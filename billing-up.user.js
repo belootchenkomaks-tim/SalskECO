@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      6.1
+// @version      6.2
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       You
 // @match        https://billing.timernet.ru/*
