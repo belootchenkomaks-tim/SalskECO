@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USERSIDE UP - Data Display
 // @namespace    http://tampermonkey.net/
-// @version      5.4
+// @version      5.5
 // @description  Отображает SN/MAC/IP/Interface в профиле абонента + иконки перехода
 // @author       You
 // @match        http://5.59.141.59:8080/oper/*
