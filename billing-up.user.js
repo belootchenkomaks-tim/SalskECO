@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      6.5
+// @version      6.6
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
-// @author       You
+// @author       Max
 // @match        https://billing.timernet.ru/*
 // @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
 // @downloadURL  https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
