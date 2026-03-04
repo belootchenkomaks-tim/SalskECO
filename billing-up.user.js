@@ -1,14 +1,15 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      6.6
+// @version      7.0
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
-// @author       Max
+// @author       You
 // @match        https://billing.timernet.ru/*
 // @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
 // @downloadURL  https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
 // @grant        none
 // ==/UserScript==
+
 (function() {
     'use strict';
 
@@ -21,6 +22,11 @@
         combined: '',
         originalAddress: ''
     };
+
+    // Добавляем переменную для хранения последнего DESC
+    let lastDesc = '';
+    // Флаг, что телефон уже был найден для текущего DESC
+    let phoneFoundForCurrentDesc = false;
 
     const USERSIDE_URL = 'http://5.59.141.59:8080/oper/';
 
@@ -54,8 +60,9 @@
             if (contract.match(/^ULS\d/)) {
                 contract = contract.replace(/^ULS/, 'ULS-');
             }
-            collectedData.contract = contract;
+            return contract;
         }
+        return '';
     }
 
     function getAddress() {
@@ -63,18 +70,61 @@
         for (let element of allDisplayFields) {
             const text = element.textContent.trim();
             if (text.includes('Россия') && text.length > 20) {
-                collectedData.address = text;
-                collectedData.originalAddress = text;
-                return;
+                return text;
             }
         }
+        return '';
     }
 
     function getPhoneNumber() {
+        const currentContract = collectedData.contract;
+
+        // 1. Пробуем найти поле mobile
         const phoneInput = document.querySelector('input[name="mobile"]');
-        if (phoneInput && phoneInput.value) {
-            collectedData.phone = phoneInput.value;
+        if (phoneInput && phoneInput.value && phoneInput.value.trim() !== '') {
+            if (phoneInput.offsetParent !== null) {
+                return phoneInput.value;
+            }
         }
+
+        // 2. Ищем все поля ввода
+        const allInputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
+        for (let input of allInputs) {
+            if (input.offsetParent !== null) {
+                const value = input.value.trim();
+                if (value && (value.startsWith('+7') || value.startsWith('8') || value.startsWith('7')) && value.length >= 10) {
+                    const parentForm = input.closest('form, div.x-panel, div.x-tab-panel');
+                    if (parentForm) {
+                        const contractInForm = parentForm.querySelector('input[name="agrm_id"]');
+                        if (contractInForm && contractInForm.value === currentContract) {
+                            return value;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Ищем в текстовых полях
+        const displayFields = document.querySelectorAll('.x-form-display-field');
+        for (let field of displayFields) {
+            if (field.offsetParent !== null) {
+                const text = field.textContent.trim();
+                if (text && (text.includes('+7') || text.includes('8(') || text.match(/\d{10,}/))) {
+                    const parentPanel = field.closest('div.x-panel, div.x-form-item');
+                    if (parentPanel) {
+                        const contractInPanel = parentPanel.querySelector('input[name="agrm_id"]');
+                        if (contractInPanel && contractInPanel.value === currentContract) {
+                            const phoneMatch = text.match(/(\+7|8)[0-9\s\-\(\)]{10,}/);
+                            if (phoneMatch) {
+                                return phoneMatch[0];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return '';
     }
 
     function getVlan() {
@@ -82,16 +132,15 @@
         for (let element of allDisplayFields) {
             const text = element.textContent.trim();
             if (/^\d+:\d+$/.test(text)) {
-                collectedData.vlan = text.split(':')[1];
-                return;
+                return text.split(':')[1];
             }
         }
+        return '';
     }
 
-    function extractAddressParts() {
-        if (!collectedData.originalAddress) return { street: '', house: '', apartment: '' };
+    function extractAddressParts(address) {
+        if (!address) return { street: '', house: '', apartment: '' };
 
-        let address = collectedData.originalAddress;
         let street = '', house = '', apartment = '';
 
         const plMatch = address.match(/пл\s+([^,]+)/i);
@@ -147,15 +196,11 @@
         return { street, house, apartment };
     }
 
-    function createCombinedParam() {
-        if (!collectedData.contract || !collectedData.address) {
-            collectedData.combined = '';
-            return;
-        }
+    function createCombinedParam(contract, address, parts) {
+        if (!contract || !address) return '';
 
-        const { street, house, apartment } = extractAddressParts();
-
-        let combined = collectedData.contract;
+        const { street, house, apartment } = parts;
+        let combined = contract;
 
         if (street) {
             let cleanStreet = transliterate(street);
@@ -179,15 +224,69 @@
             combined += '_kv' + cleanApartment;
         }
 
-        collectedData.combined = cleanSoftSign(combined);
+        return cleanSoftSign(combined);
     }
 
-    function collectAllData() {
-        getContractNumber();
-        getAddress();
-        getPhoneNumber();
-        getVlan();
-        createCombinedParam();
+    // Основная функция обновления данных
+    function updateCollectedData() {
+        const newContract = getContractNumber();
+        const newAddress = getAddress();
+        const newVlan = getVlan();
+
+        // Полностью обновляем данные, не полагаясь на старые значения
+        collectedData.contract = newContract;
+
+        // Обновляем address если есть
+        if (newAddress) {
+            collectedData.originalAddress = newAddress;
+            collectedData.address = newAddress;
+
+            // ВСЕГДА формируем новый combined заново для нового адреса
+            const parts = extractAddressParts(newAddress);
+            const newCombined = createCombinedParam(newContract, newAddress, parts);
+
+            // Проверяем, изменился ли DESC
+            if (newCombined !== lastDesc) {
+                console.log('📢 DESC изменился:', lastDesc, '->', newCombined);
+                // Полный сброс всех данных
+                collectedData.phone = '';
+                collectedData.vlan = '';
+                collectedData.combined = newCombined;
+                lastDesc = newCombined;
+                phoneFoundForCurrentDesc = false;
+            } else {
+                collectedData.combined = newCombined;
+            }
+        } else {
+            collectedData.combined = '';
+        }
+
+        // Обновляем VLAN (он всегда берется заново)
+        if (newVlan) {
+            collectedData.vlan = newVlan;
+        } else {
+            collectedData.vlan = '';
+        }
+
+        // Для телефона - ищем только если еще не найден для этого DESC
+        if (!phoneFoundForCurrentDesc) {
+            const newPhone = getPhoneNumber();
+            if (newPhone) {
+                console.log('📞 Найден телефон для текущего абонента:', newPhone);
+                collectedData.phone = newPhone;
+                phoneFoundForCurrentDesc = true;
+            } else {
+                collectedData.phone = '';
+            }
+        }
+
+        console.log('📊 Текущие данные:', {
+            contract: collectedData.contract,
+            desc: collectedData.combined,
+            phone: collectedData.phone,
+            vlan: collectedData.vlan,
+            phoneFound: phoneFoundForCurrentDesc
+        });
     }
 
     function openUserside() {
@@ -232,11 +331,11 @@
             container.style.opacity = '0.7';
         };
 
-        // Контейнер для иконок с фиксированной высотой
+        // Контейнер для иконок
         const iconsWrapper = document.createElement('div');
         iconsWrapper.style.cssText = `
             position: relative;
-            width: 42px; /* Только одна иконка */
+            width: 42px;
             height: 32px;
             margin-bottom: -2px;
             align-self: flex-start;
@@ -263,7 +362,6 @@
             z-index: 999999;
         `;
 
-        // Иконка (ваша картинка)
         const logo = document.createElement('img');
         logo.src = 'https://avatars.githubusercontent.com/u/32836293?s=200&v=4';
         logo.style.cssText = `
@@ -281,7 +379,6 @@
 
         usersideIcon.appendChild(logo);
 
-        // Тултип
         const tooltip = document.createElement('div');
         tooltip.textContent = 'Переход в USERSIDE';
         tooltip.style.cssText = `
@@ -453,7 +550,7 @@
         let isCollapsed = true;
 
         function updateContent() {
-            collectAllData();
+            updateCollectedData();
 
             content.innerHTML = `
                 <div style="margin-bottom: 14px; background: #e8f0fe; border-radius: 8px; padding: 10px 14px; border: 1px solid rgba(0, 0, 0, 0.05);">
@@ -479,8 +576,6 @@
                     </div>
                     <div style="word-break: break-all; font-size: 13px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.5; font-weight: 500;">${collectedData.vlan || '—'}</div>
                 </div>
-
-                <button id="refresh-data" style="width:100%; padding:10px; background:linear-gradient(135deg, #f5f5f5, #e8e8e8); color:#2196F3; border:none; border-radius:8px; cursor:pointer; font-size:12px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase; margin-top:5px;">🔄 ОБНОВИТЬ ДАННЫЕ</button>
             `;
 
             document.querySelectorAll('.copy-btn').forEach(btn => {
@@ -508,19 +603,6 @@
                     }
                 };
             });
-
-            const refreshBtn = document.getElementById('refresh-data');
-            if (refreshBtn) {
-                refreshBtn.onclick = function() {
-                    updateContent();
-                    this.innerHTML = '✓ ОБНОВЛЕНО';
-                    this.style.color = '#4caf50';
-                    setTimeout(() => {
-                        this.innerHTML = '🔄 ОБНОВИТЬ ДАННЫЕ';
-                        this.style.color = '#2196F3';
-                    }, 1000);
-                };
-            }
         }
 
         toggleBtn.onclick = function(e) {
@@ -567,11 +649,14 @@
             header.style.cursor = 'move';
         };
 
+        // Запускаем первое обновление
         updateContent();
+
+        // Устанавливаем интервал проверки (каждые 2 секунды)
+        setInterval(updateContent, 2000);
     }
 
     function init() {
-        collectAllData();
         createWindow();
     }
 
