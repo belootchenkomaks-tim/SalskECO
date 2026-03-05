@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         USERSIDE UP - Data Display
 // @namespace    http://tampermonkey.net/
-// @version      5.10
-// @description  Отображает SN/MAC/IP/Interface в профиле абонента + иконки перехода
+// @version      5.11
+// @description  Отображает SN/MAC/IP/Interface/Сигнал в профиле абонента + иконки перехода
 // @author       Max
 // @match        http://5.59.141.59:8080/oper/*
 // @match        http://192.168.1.146:8080/oper/*
@@ -37,13 +37,64 @@
     // ==================== СОСТОЯНИЕ ====================
     let dataWindow = null;
     let isCollapsed = false;
-    let currentData = { ip: null, interface: null, sn: null, mac: null };
+    let currentData = { ip: null, interface: null, sn: null, mac: null, signal: null };
     let currentContract = null;
 
     // ==================== ФУНКЦИИ ДЛЯ ПРОВЕРКИ СТРАНИЦЫ ====================
     function isCustomerProfile() {
         const url = window.location.href;
         return url.includes('core_section=customer') || url.includes('core_section=customer_info');
+    }
+
+    // ==================== НОВАЯ ФУНКЦИЯ: ИЗВЛЕЧЕНИЕ СИГНАЛА ====================
+
+    function extractSignalLevel() {
+        try {
+            // Ищем блок с информацией об OLT
+            const allDivs = document.querySelectorAll('div');
+
+            for (let div of allDivs) {
+                const text = div.textContent;
+
+                // Ищем строку с Rx (dBm)
+                const rxMatch = text.match(/Rx.*?\(dBm\):\s*(-?\d+\.?\d*)/i);
+                if (rxMatch && rxMatch[1]) {
+                    console.log('📶 Найден уровень сигнала:', rxMatch[1], 'dBm');
+                    return rxMatch[1];
+                }
+
+                // Альтернативный поиск: просто число после "Rx" или "сигнал"
+                const altMatch = text.match(/[РR]x[^:]*:?\s*(-?\d+\.?\d*)/i);
+                if (altMatch && altMatch[1]) {
+                    console.log('📶 Найден уровень сигнала (альт):', altMatch[1], 'dBm');
+                    return altMatch[1];
+                }
+            }
+
+            // Ищем в таблицах
+            const tables = document.querySelectorAll('table');
+            for (let table of tables) {
+                const cells = table.querySelectorAll('td');
+                for (let i = 0; i < cells.length; i++) {
+                    const cellText = cells[i].textContent;
+                    if (cellText.includes('Rx') || cellText.includes('dBm')) {
+                        // Смотрим следующую ячейку или текущую если там число
+                        const nextCell = cells[i + 1];
+                        if (nextCell) {
+                            const valueMatch = nextCell.textContent.match(/(-?\d+\.?\d*)/);
+                            if (valueMatch) {
+                                console.log('📶 Найден уровень сигнала в таблице:', valueMatch[1]);
+                                return valueMatch[1];
+                            }
+                        }
+                    }
+                }
+            }
+
+        } catch (e) {
+            console.error('Ошибка при извлечении уровня сигнала:', e);
+        }
+        return null;
     }
 
     // ==================== ФУНКЦИИ ДЛЯ ИЗВЛЕЧЕНИЯ ДАННЫХ ====================
@@ -62,7 +113,7 @@
                     }
                 }
             }
-            
+
             const allDivs = document.querySelectorAll('div');
             for (let div of allDivs) {
                 if (div.textContent.includes('Договор:')) {
@@ -147,15 +198,19 @@
                 }
             });
 
+            // Извлекаем номер договора
             const contract = extractContractNumber();
             currentContract = contract;
 
-            currentData = { ip, interface: interface_, sn, mac };
+            // Извлекаем уровень сигнала
+            const signal = extractSignalLevel();
+
+            currentData = { ip, interface: interface_, sn, mac, signal };
             console.log('📊 Данные:', currentData, 'Договор:', currentContract);
             return currentData;
         } catch (e) {
             console.error('Ошибка при извлечении данных:', e);
-            return { ip: null, interface: null, sn: null, mac: null };
+            return { ip: null, interface: null, sn: null, mac: null, signal: null };
         }
     }
 
@@ -227,7 +282,7 @@
 
     function copyMacToClipboard(mac) {
         console.log('📋 Копируем MAC:', mac);
-        
+
         if (typeof GM_setClipboard !== 'undefined') {
             try {
                 GM_setClipboard(mac);
@@ -235,7 +290,7 @@
                 return;
             } catch (e) {}
         }
-        
+
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(mac).then(() => {
                 showMacCopyNotification(mac);
@@ -281,7 +336,7 @@
             border: 1px solid rgba(255, 255, 255, 0.2);
             animation: slideIn 0.3s ease;
         `;
-        
+
         const style = document.createElement('style');
         style.textContent = `
             @keyframes slideIn {
@@ -296,9 +351,9 @@
             }
         `;
         document.head.appendChild(style);
-        
+
         document.body.appendChild(notification);
-        
+
         setTimeout(() => {
             notification.style.animation = 'slideIn 0.3s ease reverse';
             setTimeout(() => {
@@ -314,18 +369,17 @@
 
     function openBilling() {
         console.log('🌐 Открываем биллинг');
-        
+
         const baseUrl = 'https://billing.timernet.ru/#accounts';
-        
+
         if (currentContract) {
-            // Сохраняем номер договора в localStorage для второго скрипта
             try {
                 localStorage.setItem('billing_search_contract', currentContract);
                 console.log('💾 Сохранили договор в localStorage:', currentContract);
             } catch (e) {
                 console.error('Ошибка сохранения в localStorage:', e);
             }
-            
+
             const searchUrl = `${baseUrl}?contract=${currentContract}`;
             window.open(searchUrl, '_blank');
         } else {
@@ -339,27 +393,27 @@
         if (currentData.ip && LTE_IPS.includes(currentData.ip)) {
             const lteUrl = `http://${currentData.ip}/`;
             console.log('📡 Открываем/переключаемся на LTE устройство:', lteUrl);
-            
+
             if (currentData.mac) {
                 copyMacToClipboard(currentData.mac);
             }
-            
+
             const windowName = `lte_device_${currentData.ip.replace(/\./g, '_')}`;
-            
+
             let existingWindow = null;
             try {
                 existingWindow = window.open('', windowName);
             } catch (e) {
                 console.log('Не удалось проверить существующее окно');
             }
-            
+
             if (existingWindow && !existingWindow.closed) {
                 try {
                     if (existingWindow.closed) {
                         window.open(lteUrl, windowName);
                     } else {
                         existingWindow.focus();
-                        
+
                         try {
                             if (existingWindow.location.href !== lteUrl) {
                                 existingWindow.location.href = lteUrl;
@@ -782,6 +836,24 @@
             background: #fce4ec;
             color: #c2185b;
         }
+
+      .signal-good {
+    background: #c8e6c9 !important;
+    color: #2e7d32 !important;
+    font-weight: 700;
+}
+
+.signal-medium {
+    background: #fff9c4 !important;
+    color: #f57f17 !important;
+    font-weight: 700;
+}
+
+.signal-bad {
+    background: #ffcdd2 !important;
+    color: #c62828 !important;
+    font-weight: 700;
+}
     `);
 
     // ==================== ОБНОВЛЕНИЕ ДАННЫХ ====================
@@ -796,7 +868,34 @@
             lteIcon.style.display = ipType === 'lte' ? 'block' : 'none';
         }
 
+       // В функции updateWindowData, где определяется класс для сигнала
+let signalClass = '';
+if (data.signal) {
+    const signalValue = parseFloat(data.signal);
+    if (signalValue >= -25) {
+        signalClass = 'signal-good';      // от -
+    } else if (signalValue >= -30) {
+        signalClass = 'signal-medium';    // от
+    } else {
+        signalClass = 'signal-bad';       // от
+    }
+}
+
+
+        // Формируем HTML с учетом наличия сигнала
+   let signalHtml = '';
+if (data.signal) {
+    signalHtml = `
+        <div class="data-row">
+            <span class="data-label">Сигнал:</span>
+            <span id="signal-value" class="data-value ${signalClass}">${data.signal} dBm</span>
+            <span class="copy-btn" style="visibility:hidden;">📋</span>
+        </div>
+    `;
+}
+
         content.innerHTML = `
+            ${signalHtml}
             <div class="data-row">
                 <span class="data-label">IP:</span>
                 <span id="ip-value" class="data-value">${data.ip || '-'}</span>
@@ -819,6 +918,7 @@
             </div>
         `;
 
+        // Добавляем обработчики для копирования (кроме сигнала)
         ['sn', 'mac', 'ip', 'interface'].forEach(id => {
             const btn = document.getElementById(`copy-${id}`);
             if (btn) {
