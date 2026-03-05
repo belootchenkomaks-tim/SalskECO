@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      7.0
+// @version      7.6
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       You
 // @match        https://billing.timernet.ru/*
@@ -17,7 +17,7 @@
     let collectedData = {
         contract: '',
         address: '',
-        phone: '',
+        ip: '', // Вместо name теперь ip
         vlan: '',
         combined: '',
         originalAddress: ''
@@ -25,8 +25,8 @@
 
     // Добавляем переменную для хранения последнего DESC
     let lastDesc = '';
-    // Флаг, что телефон уже был найден для текущего DESC
-    let phoneFoundForCurrentDesc = false;
+    // Флаг, что IP уже был найден для текущего DESC
+    let ipFoundForCurrentDesc = false;
 
     const USERSIDE_URL = 'http://5.59.141.59:8080/oper/';
 
@@ -76,50 +76,22 @@
         return '';
     }
 
-    function getPhoneNumber() {
-        const currentContract = collectedData.contract;
+    // НОВАЯ ФУНКЦИЯ: получение IP адреса
+    function getIpFromField() {
+        // Ищем элемент с IP в формате "172.0.18.102-СКАТ-ГудНет-Афродита"
+        const ipPattern = /^(\d+\.\d+\.\d+\.\d+)-/;
 
-        // 1. Пробуем найти поле mobile
-        const phoneInput = document.querySelector('input[name="mobile"]');
-        if (phoneInput && phoneInput.value && phoneInput.value.trim() !== '') {
-            if (phoneInput.offsetParent !== null) {
-                return phoneInput.value;
-            }
-        }
+        // Ищем во всех display полях
+        const allDisplayFields = document.querySelectorAll('.x-form-display-field');
+        for (let element of allDisplayFields) {
+            const text = element.textContent.trim();
 
-        // 2. Ищем все поля ввода
-        const allInputs = document.querySelectorAll('input[type="text"], input[type="tel"]');
-        for (let input of allInputs) {
-            if (input.offsetParent !== null) {
-                const value = input.value.trim();
-                if (value && (value.startsWith('+7') || value.startsWith('8') || value.startsWith('7')) && value.length >= 10) {
-                    const parentForm = input.closest('form, div.x-panel, div.x-tab-panel');
-                    if (parentForm) {
-                        const contractInForm = parentForm.querySelector('input[name="agrm_id"]');
-                        if (contractInForm && contractInForm.value === currentContract) {
-                            return value;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Ищем в текстовых полях
-        const displayFields = document.querySelectorAll('.x-form-display-field');
-        for (let field of displayFields) {
-            if (field.offsetParent !== null) {
-                const text = field.textContent.trim();
-                if (text && (text.includes('+7') || text.includes('8(') || text.match(/\d{10,}/))) {
-                    const parentPanel = field.closest('div.x-panel, div.x-form-item');
-                    if (parentPanel) {
-                        const contractInPanel = parentPanel.querySelector('input[name="agrm_id"]');
-                        if (contractInPanel && contractInPanel.value === currentContract) {
-                            const phoneMatch = text.match(/(\+7|8)[0-9\s\-\(\)]{10,}/);
-                            if (phoneMatch) {
-                                return phoneMatch[0];
-                            }
-                        }
-                    }
+            // Проверяем, начинается ли текст с IP и содержит ли -СКАТ-
+            if (text.match(/^\d+\.\d+\.\d+\.\d+-СКАТ-/)) {
+                const match = text.match(ipPattern);
+                if (match && match[1]) {
+                    console.log('🌐 Найден IP:', match[1]);
+                    return match[1];
                 }
             }
         }
@@ -232,6 +204,7 @@
         const newContract = getContractNumber();
         const newAddress = getAddress();
         const newVlan = getVlan();
+        const newIp = getIpFromField(); // Получаем IP
 
         // Полностью обновляем данные, не полагаясь на старые значения
         collectedData.contract = newContract;
@@ -249,11 +222,11 @@
             if (newCombined !== lastDesc) {
                 console.log('📢 DESC изменился:', lastDesc, '->', newCombined);
                 // Полный сброс всех данных
-                collectedData.phone = '';
+                collectedData.ip = '';
                 collectedData.vlan = '';
                 collectedData.combined = newCombined;
                 lastDesc = newCombined;
-                phoneFoundForCurrentDesc = false;
+                ipFoundForCurrentDesc = false;
             } else {
                 collectedData.combined = newCombined;
             }
@@ -268,24 +241,23 @@
             collectedData.vlan = '';
         }
 
-        // Для телефона - ищем только если еще не найден для этого DESC
-        if (!phoneFoundForCurrentDesc) {
-            const newPhone = getPhoneNumber();
-            if (newPhone) {
-                console.log('📞 Найден телефон для текущего абонента:', newPhone);
-                collectedData.phone = newPhone;
-                phoneFoundForCurrentDesc = true;
+        // Для IP - ищем только если еще не найден для этого DESC
+        if (!ipFoundForCurrentDesc) {
+            if (newIp) {
+                console.log('🌐 Найден IP для текущего абонента:', newIp);
+                collectedData.ip = newIp;
+                ipFoundForCurrentDesc = true;
             } else {
-                collectedData.phone = '';
+                collectedData.ip = '';
             }
         }
 
         console.log('📊 Текущие данные:', {
             contract: collectedData.contract,
             desc: collectedData.combined,
-            phone: collectedData.phone,
+            ip: collectedData.ip,
             vlan: collectedData.vlan,
-            phoneFound: phoneFoundForCurrentDesc
+            ipFound: ipFoundForCurrentDesc
         });
     }
 
@@ -563,10 +535,10 @@
 
                 <div style="margin-bottom: 14px; background: #fce4ec; border-radius: 8px; padding: 10px 14px; border: 1px solid rgba(0, 0, 0, 0.05);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="color: #c2185b; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">ТЕЛЕФОН</span>
-                        <button class="copy-btn" data-copy="${collectedData.phone || ''}" style="background:none; border:none; font-size:15px; cursor:pointer; color:#78909c; width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                        <span style="color: #c2185b; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">IP АДРЕС</span>
+                        <button class="copy-btn" data-copy="${collectedData.ip || ''}" style="background:none; border:none; font-size:15px; cursor:pointer; color:#78909c; width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
                     </div>
-                    <div style="word-break: break-all; font-size: 13px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.5; font-weight: 500;">${collectedData.phone || '—'}</div>
+                    <div style="word-break: break-all; font-size: 13px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.5; font-weight: 500;">${collectedData.ip || '—'}</div>
                 </div>
 
                 <div style="margin-bottom: 14px; background: #f5f5f5; border-radius: 8px; padding: 10px 14px; border: 1px solid rgba(0, 0, 0, 0.05);">
