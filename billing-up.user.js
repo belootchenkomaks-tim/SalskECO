@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      7.7
-// @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE + переход на LTE
+// @version      7.8
+// @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       You
 // @match        https://billing.timernet.ru/*
 // @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
@@ -23,14 +23,14 @@
         originalAddress: ''
     };
 
-    // Добавляем переменную для хранения последнего DESC
+    // Добавляем переменную для хранения последнего договора и адреса
+    let lastContract = '';
+    let lastAddress = '';
     let lastDesc = '';
-    // Флаг, что IP уже был найден для текущего DESC
     let ipFoundForCurrentDesc = false;
 
     const USERSIDE_URL = 'http://5.59.141.59:8080/oper/';
 
-    // Диапазон LTE IP
     const LTE_IPS = [
         '172.18.0.100', '172.18.0.101', '172.18.0.102',
         '172.18.0.103', '172.18.0.104', '172.18.0.105',
@@ -38,7 +38,6 @@
         '172.18.0.109', '172.18.0.110'
     ];
 
-    // Функция для транслитерации
     function transliterate(text) {
         text = text.replace(/[ьЪ]/g, '');
         const translitMap = {
@@ -84,7 +83,6 @@
         return '';
     }
 
-    // Функция для получения IP адреса
     function getIpFromField() {
         const ipPattern = /^(\d+\.\d+\.\d+\.\d+)-/;
 
@@ -95,7 +93,6 @@
             if (text.match(/^\d+\.\d+\.\d+\.\d+-СКАТ-/)) {
                 const match = text.match(ipPattern);
                 if (match && match[1]) {
-                    console.log('🌐 Найден IP:', match[1]);
                     return match[1];
                 }
             }
@@ -204,7 +201,6 @@
         return cleanSoftSign(combined);
     }
 
-    // НОВАЯ ФУНКЦИЯ: открытие LTE устройства с проверкой существующей вкладки
     function openLteDevice() {
         const ip = collectedData.ip;
 
@@ -213,7 +209,6 @@
             return;
         }
 
-        // Проверяем, что IP входит в диапазон LTE
         if (!LTE_IPS.includes(ip)) {
             console.log('❌ IP не входит в диапазон LTE:', ip);
             return;
@@ -222,11 +217,6 @@
         const lteUrl = `http://${ip}/home`;
         console.log('📡 Открываем LTE устройство:', lteUrl);
 
-        // Пытаемся найти уже открытую вкладку с этим URL
-        let existingTab = null;
-        const tabs = window.opener ? window.opener.frames : null;
-
-        // Используем window.open с указанием имени - если вкладка с таким именем уже есть, она переключится на неё
         const tabName = `lte_${ip.replace(/\./g, '_')}`;
         const newTab = window.open(lteUrl, tabName);
 
@@ -235,60 +225,71 @@
         }
     }
 
-    // Основная функция обновления данных
+    // ИСПРАВЛЕННАЯ функция обновления данных
     function updateCollectedData() {
         const newContract = getContractNumber();
         const newAddress = getAddress();
-        const newVlan = getVlan();
         const newIp = getIpFromField();
+        const newVlan = getVlan();
 
-        // Полностью обновляем данные, не полагаясь на старые значения
-        collectedData.contract = newContract;
+        console.log('🔍 Проверка данных:', {
+            contract: newContract,
+            address: newAddress ? newAddress.substring(0, 50) + '...' : 'нет',
+            ip: newIp,
+            vlan: newVlan
+        });
 
-        // Обновляем address если есть
-        if (newAddress) {
-            collectedData.originalAddress = newAddress;
+        // Проверяем, изменился ли договор или адрес
+        const contractChanged = newContract !== lastContract;
+        const addressChanged = newAddress !== lastAddress;
+
+        if (contractChanged || addressChanged) {
+            console.log('📢 Обнаружены изменения:', {
+                contractChanged,
+                addressChanged,
+                oldContract: lastContract,
+                newContract,
+                oldAddress: lastAddress ? lastAddress.substring(0, 30) + '...' : 'нет',
+                newAddress: newAddress ? newAddress.substring(0, 30) + '...' : 'нет'
+            });
+
+            // Полный сброс всех данных
+            collectedData.contract = newContract;
             collectedData.address = newAddress;
-
-            const parts = extractAddressParts(newAddress);
-            const newCombined = createCombinedParam(newContract, newAddress, parts);
-
-            if (newCombined !== lastDesc) {
-                console.log('📢 DESC изменился:', lastDesc, '->', newCombined);
-                collectedData.ip = '';
-                collectedData.vlan = '';
-                collectedData.combined = newCombined;
-                lastDesc = newCombined;
-                ipFoundForCurrentDesc = false;
-            } else {
-                collectedData.combined = newCombined;
-            }
-        } else {
-            collectedData.combined = '';
-        }
-
-        if (newVlan) {
+            collectedData.originalAddress = newAddress;
+            collectedData.ip = newIp;
             collectedData.vlan = newVlan;
-        } else {
-            collectedData.vlan = '';
-        }
 
-        if (!ipFoundForCurrentDesc) {
-            if (newIp) {
-                console.log('🌐 Найден IP для текущего абонента:', newIp);
-                collectedData.ip = newIp;
-                ipFoundForCurrentDesc = true;
+            // Формируем новый DESC
+            if (newContract && newAddress) {
+                const parts = extractAddressParts(newAddress);
+                collectedData.combined = createCombinedParam(newContract, newAddress, parts);
+                console.log('✨ Новый DESC сформирован:', collectedData.combined);
             } else {
-                collectedData.ip = '';
+                collectedData.combined = '';
+            }
+
+            // Обновляем сохраненные значения
+            lastContract = newContract;
+            lastAddress = newAddress;
+            lastDesc = collectedData.combined;
+            ipFoundForCurrentDesc = !!newIp;
+
+        } else {
+            // Если изменений нет, обновляем только IP и VLAN
+            collectedData.ip = newIp || collectedData.ip;
+            collectedData.vlan = newVlan || collectedData.vlan;
+
+            if (newIp && !ipFoundForCurrentDesc) {
+                ipFoundForCurrentDesc = true;
             }
         }
 
-        console.log('📊 Текущие данные:', {
+        console.log('📊 Итоговые данные:', {
             contract: collectedData.contract,
             desc: collectedData.combined,
             ip: collectedData.ip,
-            vlan: collectedData.vlan,
-            ipFound: ipFoundForCurrentDesc
+            vlan: collectedData.vlan
         });
     }
 
@@ -334,7 +335,6 @@
             container.style.opacity = '0.7';
         };
 
-        // Контейнер для иконок
         const iconsWrapper = document.createElement('div');
         iconsWrapper.style.cssText = `
             position: relative;
@@ -442,7 +442,7 @@
             transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
             pointer-events: auto;
             z-index: 999999;
-            display: none; /* По умолчанию скрыта */
+            display: none;
         `;
 
         const lteText = document.createElement('span');
@@ -640,7 +640,6 @@
         function updateContent() {
             updateCollectedData();
 
-            // Показываем или скрываем иконку LTE в зависимости от того, есть ли IP
             if (collectedData.ip && LTE_IPS.includes(collectedData.ip)) {
                 lteIcon.style.display = 'block';
             } else {
