@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      7.8
+// @version      7.11
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       You
 // @match        https://billing.timernet.ru/*
@@ -18,6 +18,7 @@
         contract: '',
         address: '',
         ip: '',
+        cdataNumber: '',
         vlan: '',
         combined: '',
         originalAddress: ''
@@ -83,22 +84,26 @@
         return '';
     }
 
-    function getIpFromField() {
+    function getIpAndCdataNumber() {
         const ipPattern = /^(\d+\.\d+\.\d+\.\d+)-/;
+        const cdataPattern = /CDATA-(\d+)/i;
 
         const allDisplayFields = document.querySelectorAll('.x-form-display-field');
         for (let element of allDisplayFields) {
             const text = element.textContent.trim();
 
             if (text.match(/^\d+\.\d+\.\d+\.\d+-СКАТ-/)) {
-                const match = text.match(ipPattern);
-                if (match && match[1]) {
-                    return match[1];
-                }
+                const ipMatch = text.match(ipPattern);
+                const cdataMatch = text.match(cdataPattern);
+
+                const ip = ipMatch ? ipMatch[1] : '';
+                const cdataNumber = cdataMatch ? cdataMatch[1] : '';
+
+                return { ip, cdataNumber };
             }
         }
 
-        return '';
+        return { ip: '', cdataNumber: '' };
     }
 
     function getVlan() {
@@ -143,14 +148,6 @@
             const prMatch = address.match(/пр-кт\s+([^,]+)/i);
             if (prMatch) {
                 street = prMatch[1].trim();
-                street = street.replace(/["']/g, '').trim();
-            }
-        }
-
-        if (!street) {
-            const prospectMatch = address.match(/проспект\s+([^,]+)/i);
-            if (prospectMatch) {
-                street = prospectMatch[1].trim();
                 street = street.replace(/["']/g, '').trim();
             }
         }
@@ -201,6 +198,37 @@
         return cleanSoftSign(combined);
     }
 
+    // ИСПРАВЛЕННАЯ функция сохранения данных
+    function saveDataForUserside() {
+        if (collectedData.contract) {
+            const addressParts = extractAddressParts(collectedData.originalAddress || '');
+
+            // Формируем полный объект с данными
+            const dataToSave = {
+                contract: collectedData.contract,
+                address: collectedData.address,
+                originalAddress: collectedData.originalAddress,
+                street: addressParts.street,
+                house: addressParts.house,
+                apartment: addressParts.apartment,
+                ip: collectedData.ip,
+                cdataNumber: collectedData.cdataNumber,
+                vlan: collectedData.vlan,
+                combined: collectedData.combined,
+                timestamp: Date.now()
+            };
+
+            // Сохраняем под правильным ключом
+            localStorage.setItem('timernet_to_userside', JSON.stringify(dataToSave));
+
+            // Для обратной совместимости также сохраняем номер договора отдельно
+            localStorage.setItem('billing_search_contract', collectedData.contract);
+
+            console.log('💾 Данные сохранены для USERSIDE:', dataToSave);
+            console.log('💾 Номер договора отдельно:', collectedData.contract);
+        }
+    }
+
     function openLteDevice() {
         const ip = collectedData.ip;
 
@@ -225,86 +253,79 @@
         }
     }
 
-    // ИСПРАВЛЕННАЯ функция обновления данных
+    // Основная функция обновления данных
     function updateCollectedData() {
         const newContract = getContractNumber();
         const newAddress = getAddress();
-        const newIp = getIpFromField();
+        const { ip: newIp, cdataNumber: newCdataNumber } = getIpAndCdataNumber();
         const newVlan = getVlan();
 
         console.log('🔍 Проверка данных:', {
             contract: newContract,
             address: newAddress ? newAddress.substring(0, 50) + '...' : 'нет',
             ip: newIp,
+            cdata: newCdataNumber,
             vlan: newVlan
         });
 
-        // Проверяем, изменился ли договор или адрес
         const contractChanged = newContract !== lastContract;
         const addressChanged = newAddress !== lastAddress;
 
         if (contractChanged || addressChanged) {
-            console.log('📢 Обнаружены изменения:', {
-                contractChanged,
-                addressChanged,
-                oldContract: lastContract,
-                newContract,
-                oldAddress: lastAddress ? lastAddress.substring(0, 30) + '...' : 'нет',
-                newAddress: newAddress ? newAddress.substring(0, 30) + '...' : 'нет'
-            });
+            console.log('📢 Обнаружены изменения');
 
-            // Полный сброс всех данных
             collectedData.contract = newContract;
             collectedData.address = newAddress;
             collectedData.originalAddress = newAddress;
             collectedData.ip = newIp;
+            collectedData.cdataNumber = newCdataNumber;
             collectedData.vlan = newVlan;
 
-            // Формируем новый DESC
             if (newContract && newAddress) {
                 const parts = extractAddressParts(newAddress);
                 collectedData.combined = createCombinedParam(newContract, newAddress, parts);
-                console.log('✨ Новый DESC сформирован:', collectedData.combined);
             } else {
                 collectedData.combined = '';
             }
 
-            // Обновляем сохраненные значения
             lastContract = newContract;
             lastAddress = newAddress;
             lastDesc = collectedData.combined;
             ipFoundForCurrentDesc = !!newIp;
 
         } else {
-            // Если изменений нет, обновляем только IP и VLAN
             collectedData.ip = newIp || collectedData.ip;
+            collectedData.cdataNumber = newCdataNumber || collectedData.cdataNumber;
             collectedData.vlan = newVlan || collectedData.vlan;
 
             if (newIp && !ipFoundForCurrentDesc) {
                 ipFoundForCurrentDesc = true;
             }
         }
-
-        console.log('📊 Итоговые данные:', {
-            contract: collectedData.contract,
-            desc: collectedData.combined,
-            ip: collectedData.ip,
-            vlan: collectedData.vlan
-        });
     }
 
-    function openUserside() {
-        const contractNumber = collectedData.contract;
+  function openUserside() {
+    saveDataForUserside();
 
-        if (contractNumber) {
-            const searchQuery = contractNumber;
-            const encodedQuery = encodeURIComponent(searchQuery);
-            const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=dashboard&search=${encodedQuery}`;
-            window.open(usersideUrl, '_blank');
-        } else {
-            window.open('http://5.59.141.59:8080/oper/', '_blank');
-        }
+    const contractNumber = collectedData.contract;
+
+    if (contractNumber) {
+        // Очищаем номер
+        let cleanContract = contractNumber.replace(/[^0-9]/g, '');
+
+        // Получаем адрес
+        let address = collectedData.originalAddress || collectedData.address || '';
+
+        // Кодируем адрес для URL
+        const encodedAddress = encodeURIComponent(address);
+
+        // Формируем URL с адресом
+        const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${cleanContract}&address_data=${encodedAddress}`;
+
+        console.log('🔗 URL для USERSIDE:', usersideUrl);
+        window.open(usersideUrl, '_blank');
     }
+}
 
     function createWindow() {
         if (document.getElementById('timernet-container')) return;
@@ -318,12 +339,12 @@
         container.id = 'timernet-container';
         container.style.cssText = `
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            bottom: 60px;
+            left: 10px;
             z-index: 999998;
             display: flex;
             flex-direction: column;
-            align-items: flex-end;
+            align-items: flex-start;
             opacity: 0.7;
             transition: opacity 0.3s ease;
         `;
@@ -342,7 +363,7 @@
             height: 32px;
             margin-bottom: -2px;
             align-self: flex-start;
-            margin-left: 20px;
+            margin-left: 10px;
         `;
 
         // Иконка для перехода в USERSIDE
@@ -377,7 +398,7 @@
             left: 50%;
             transform: translateX(-50%);
             transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            z-index: 2;
+            z-index: 999999;
         `;
 
         usersideIcon.appendChild(usersideLogo);
@@ -514,7 +535,7 @@
         const window = document.createElement('div');
         window.id = 'timernet-window';
         window.style.cssText = `
-            width: 300px;
+            width: 250px;
             background: white;
             border-radius: 12px;
             padding: 0;
@@ -528,7 +549,7 @@
         const header = document.createElement('div');
         header.style.cssText = `
             background: linear-gradient(135deg, #2196F3, #1976D2);
-            padding: 14px 18px;
+            padding: 12px 14px;
             border-radius: 11px 11px 0 0;
             display: flex;
             justify-content: space-between;
@@ -541,7 +562,7 @@
         titleSpan.innerHTML = 'BILLING UP';
         titleSpan.style.cssText = `
             font-family: 'Orbitron', sans-serif;
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 700;
             letter-spacing: 1.5px;
             color: white;
@@ -561,12 +582,12 @@
         toggleBtn.style.cssText = `
             background: rgba(255,255,255,0.2);
             border: none;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 500;
             cursor: pointer;
             color: white;
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -591,12 +612,12 @@
         closeBtn.style.cssText = `
             background: rgba(255,255,255,0.2);
             border: none;
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 500;
             cursor: pointer;
             color: white;
-            width: 28px;
-            height: 28px;
+            width: 24px;
+            height: 24px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -622,7 +643,7 @@
         const content = document.createElement('div');
         content.id = 'data-content';
         content.style.cssText = `
-            padding: 18px;
+            padding: 14px;
             transition: all 0.3s ease;
             display: none;
             background: white;
@@ -647,28 +668,31 @@
             }
 
             content.innerHTML = `
-                <div style="margin-bottom: 14px; background: #e8f0fe; border-radius: 8px; padding: 10px 14px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="color: #1976D2; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">DESC</span>
-                        <button class="copy-btn" data-copy="${collectedData.combined || ''}" style="background:none; border:none; font-size:15px; cursor:pointer; color:#78909c; width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                <div style="margin-bottom: 12px; background: #e8f0fe; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="color: #1976D2; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">DESC</span>
+                        <button class="copy-btn" data-copy="${collectedData.combined || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
                     </div>
-                    <div style="word-break: break-all; font-size: 13px; font-family: 'SF Mono', 'Menlo', monospace; color: #1a237e; line-height: 1.5; font-weight: 500;">${collectedData.combined || '—'}</div>
+                    <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #1a237e; line-height: 1.4; font-weight: 500;">${collectedData.combined || '—'}</div>
                 </div>
 
-                <div style="margin-bottom: 14px; background: #fce4ec; border-radius: 8px; padding: 10px 14px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="color: #c2185b; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">IP АДРЕС</span>
-                        <button class="copy-btn" data-copy="${collectedData.ip || ''}" style="background:none; border:none; font-size:15px; cursor:pointer; color:#78909c; width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                <div style="margin-bottom: 12px; background: #fce4ec; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="color: #c2185b; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">IP АДРЕС</span>
+                        <button class="copy-btn" data-copy="${collectedData.ip || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
                     </div>
-                    <div style="word-break: break-all; font-size: 13px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.5; font-weight: 500;">${collectedData.ip || '—'}</div>
+                    <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.4; font-weight: 500;">
+                        ${collectedData.ip || '—'}
+                        ${collectedData.cdataNumber ? `<span style="color: #666; font-size: 11px; margin-left: 5px;">(CDATA-${collectedData.cdataNumber})</span>` : ''}
+                    </div>
                 </div>
 
-                <div style="margin-bottom: 14px; background: #f5f5f5; border-radius: 8px; padding: 10px 14px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                        <span style="color: #616161; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">VLAN</span>
-                        <button class="copy-btn" data-copy="${collectedData.vlan || ''}" style="background:none; border:none; font-size:15px; cursor:pointer; color:#78909c; width:28px; height:28px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                <div style="margin-bottom: 0; background: #f5f5f5; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="color: #616161; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">VLAN</span>
+                        <button class="copy-btn" data-copy="${collectedData.vlan || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
                     </div>
-                    <div style="word-break: break-all; font-size: 13px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.5; font-weight: 500;">${collectedData.vlan || '—'}</div>
+                    <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.4; font-weight: 500;">${collectedData.vlan || '—'}</div>
                 </div>
             `;
 
