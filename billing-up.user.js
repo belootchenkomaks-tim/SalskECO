@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      7.6
-// @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
+// @version      7.7
+// @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE + переход на LTE
 // @author       You
 // @match        https://billing.timernet.ru/*
 // @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
@@ -17,7 +17,7 @@
     let collectedData = {
         contract: '',
         address: '',
-        ip: '', // Вместо name теперь ip
+        ip: '',
         vlan: '',
         combined: '',
         originalAddress: ''
@@ -29,6 +29,14 @@
     let ipFoundForCurrentDesc = false;
 
     const USERSIDE_URL = 'http://5.59.141.59:8080/oper/';
+
+    // Диапазон LTE IP
+    const LTE_IPS = [
+        '172.18.0.100', '172.18.0.101', '172.18.0.102',
+        '172.18.0.103', '172.18.0.104', '172.18.0.105',
+        '172.18.0.106', '172.18.0.107', '172.18.0.108',
+        '172.18.0.109', '172.18.0.110'
+    ];
 
     // Функция для транслитерации
     function transliterate(text) {
@@ -76,17 +84,14 @@
         return '';
     }
 
-    // НОВАЯ ФУНКЦИЯ: получение IP адреса
+    // Функция для получения IP адреса
     function getIpFromField() {
-        // Ищем элемент с IP в формате "172.0.18.102-СКАТ-ГудНет-Афродита"
         const ipPattern = /^(\d+\.\d+\.\d+\.\d+)-/;
 
-        // Ищем во всех display полях
         const allDisplayFields = document.querySelectorAll('.x-form-display-field');
         for (let element of allDisplayFields) {
             const text = element.textContent.trim();
 
-            // Проверяем, начинается ли текст с IP и содержит ли -СКАТ-
             if (text.match(/^\d+\.\d+\.\d+\.\d+-СКАТ-/)) {
                 const match = text.match(ipPattern);
                 if (match && match[1]) {
@@ -199,12 +204,43 @@
         return cleanSoftSign(combined);
     }
 
+    // НОВАЯ ФУНКЦИЯ: открытие LTE устройства с проверкой существующей вкладки
+    function openLteDevice() {
+        const ip = collectedData.ip;
+
+        if (!ip) {
+            console.log('❌ Нет IP для открытия');
+            return;
+        }
+
+        // Проверяем, что IP входит в диапазон LTE
+        if (!LTE_IPS.includes(ip)) {
+            console.log('❌ IP не входит в диапазон LTE:', ip);
+            return;
+        }
+
+        const lteUrl = `http://${ip}/home`;
+        console.log('📡 Открываем LTE устройство:', lteUrl);
+
+        // Пытаемся найти уже открытую вкладку с этим URL
+        let existingTab = null;
+        const tabs = window.opener ? window.opener.frames : null;
+
+        // Используем window.open с указанием имени - если вкладка с таким именем уже есть, она переключится на неё
+        const tabName = `lte_${ip.replace(/\./g, '_')}`;
+        const newTab = window.open(lteUrl, tabName);
+
+        if (newTab) {
+            newTab.focus();
+        }
+    }
+
     // Основная функция обновления данных
     function updateCollectedData() {
         const newContract = getContractNumber();
         const newAddress = getAddress();
         const newVlan = getVlan();
-        const newIp = getIpFromField(); // Получаем IP
+        const newIp = getIpFromField();
 
         // Полностью обновляем данные, не полагаясь на старые значения
         collectedData.contract = newContract;
@@ -214,14 +250,11 @@
             collectedData.originalAddress = newAddress;
             collectedData.address = newAddress;
 
-            // ВСЕГДА формируем новый combined заново для нового адреса
             const parts = extractAddressParts(newAddress);
             const newCombined = createCombinedParam(newContract, newAddress, parts);
 
-            // Проверяем, изменился ли DESC
             if (newCombined !== lastDesc) {
                 console.log('📢 DESC изменился:', lastDesc, '->', newCombined);
-                // Полный сброс всех данных
                 collectedData.ip = '';
                 collectedData.vlan = '';
                 collectedData.combined = newCombined;
@@ -234,14 +267,12 @@
             collectedData.combined = '';
         }
 
-        // Обновляем VLAN (он всегда берется заново)
         if (newVlan) {
             collectedData.vlan = newVlan;
         } else {
             collectedData.vlan = '';
         }
 
-        // Для IP - ищем только если еще не найден для этого DESC
         if (!ipFoundForCurrentDesc) {
             if (newIp) {
                 console.log('🌐 Найден IP для текущего абонента:', newIp);
@@ -307,7 +338,7 @@
         const iconsWrapper = document.createElement('div');
         iconsWrapper.style.cssText = `
             position: relative;
-            width: 42px;
+            width: 94px;
             height: 32px;
             margin-bottom: -2px;
             align-self: flex-start;
@@ -334,9 +365,9 @@
             z-index: 999999;
         `;
 
-        const logo = document.createElement('img');
-        logo.src = 'https://avatars.githubusercontent.com/u/32836293?s=200&v=4';
-        logo.style.cssText = `
+        const usersideLogo = document.createElement('img');
+        usersideLogo.src = 'https://avatars.githubusercontent.com/u/32836293?s=200&v=4';
+        usersideLogo.style.cssText = `
             width: 26px;
             height: 26px;
             object-fit: contain;
@@ -349,11 +380,11 @@
             z-index: 2;
         `;
 
-        usersideIcon.appendChild(logo);
+        usersideIcon.appendChild(usersideLogo);
 
-        const tooltip = document.createElement('div');
-        tooltip.textContent = 'Переход в USERSIDE';
-        tooltip.style.cssText = `
+        const usersideTooltip = document.createElement('div');
+        usersideTooltip.textContent = 'Переход в USERSIDE';
+        usersideTooltip.style.cssText = `
             position: absolute;
             bottom: 100%;
             left: 50%;
@@ -375,25 +406,110 @@
             margin-bottom: 8px;
         `;
 
-        usersideIcon.appendChild(tooltip);
+        usersideIcon.appendChild(usersideTooltip);
 
         usersideIcon.onmouseover = () => {
             usersideIcon.style.height = '32px';
             usersideIcon.style.background = 'linear-gradient(135deg, #1565C0, #0D47A1)';
-            logo.style.bottom = '3px';
-            tooltip.style.opacity = '1';
+            usersideLogo.style.bottom = '3px';
+            usersideTooltip.style.opacity = '1';
         };
 
         usersideIcon.onmouseout = () => {
             usersideIcon.style.height = '12px';
             usersideIcon.style.background = 'linear-gradient(135deg, #1E88E5, #1565C0)';
-            logo.style.bottom = '-14px';
-            tooltip.style.opacity = '0';
+            usersideLogo.style.bottom = '-14px';
+            usersideTooltip.style.opacity = '0';
         };
 
         usersideIcon.onclick = openUserside;
 
+        // Иконка для перехода на LTE
+        const lteIcon = document.createElement('div');
+        lteIcon.id = 'lte-nav-icon';
+        lteIcon.style.cssText = `
+            position: absolute;
+            left: 52px;
+            bottom: 0;
+            width: 42px;
+            height: 12px;
+            background: linear-gradient(135deg, #64B5F6, #42A5F5);
+            border: none;
+            border-radius: 12px 12px 0px 0px;
+            box-shadow: 0 -2px 8px rgba(100, 181, 246, 0.3);
+            cursor: pointer;
+            overflow: hidden;
+            transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: auto;
+            z-index: 999999;
+            display: none; /* По умолчанию скрыта */
+        `;
+
+        const lteText = document.createElement('span');
+        lteText.textContent = 'LTE';
+        lteText.style.cssText = `
+            color: white;
+            font-family: 'Orbitron', Arial, sans-serif;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            position: absolute;
+            bottom: -3px;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 2;
+            white-space: nowrap;
+        `;
+
+        lteIcon.appendChild(lteText);
+
+        const lteTooltip = document.createElement('div');
+        lteTooltip.textContent = 'Переход на LTE';
+        lteTooltip.style.cssText = `
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            font-family: 'Orbitron', Arial, sans-serif;
+            z-index: 1000000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 8px;
+        `;
+
+        lteIcon.appendChild(lteTooltip);
+
+        lteIcon.onmouseover = () => {
+            lteIcon.style.height = '32px';
+            lteIcon.style.background = 'linear-gradient(135deg, #42A5F5, #2196F3)';
+            lteText.style.bottom = '12px';
+            lteTooltip.style.opacity = '1';
+        };
+
+        lteIcon.onmouseout = () => {
+            lteIcon.style.height = '12px';
+            lteIcon.style.background = 'linear-gradient(135deg, #64B5F6, #42A5F5)';
+            lteText.style.bottom = '-3px';
+            lteTooltip.style.opacity = '0';
+        };
+
+        lteIcon.onclick = openLteDevice;
+
         iconsWrapper.appendChild(usersideIcon);
+        iconsWrapper.appendChild(lteIcon);
 
         const window = document.createElement('div');
         window.id = 'timernet-window';
@@ -524,6 +640,13 @@
         function updateContent() {
             updateCollectedData();
 
+            // Показываем или скрываем иконку LTE в зависимости от того, есть ли IP
+            if (collectedData.ip && LTE_IPS.includes(collectedData.ip)) {
+                lteIcon.style.display = 'block';
+            } else {
+                lteIcon.style.display = 'none';
+            }
+
             content.innerHTML = `
                 <div style="margin-bottom: 14px; background: #e8f0fe; border-radius: 8px; padding: 10px 14px; border: 1px solid rgba(0, 0, 0, 0.05);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
@@ -621,10 +744,7 @@
             header.style.cursor = 'move';
         };
 
-        // Запускаем первое обновление
         updateContent();
-
-        // Устанавливаем интервал проверки (каждые 2 секунды)
         setInterval(updateContent, 2000);
     }
 
