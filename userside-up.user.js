@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USERSIDE UP - Data Display
 // @namespace    http://tampermonkey.net/
-// @version      5.6
+// @version      5.9
 // @description  Отображает SN/MAC/IP/Interface в профиле абонента + иконки перехода
 // @author       Max
 // @match        http://5.59.141.59:8080/oper/*
@@ -37,6 +37,7 @@
     let dataWindow = null;
     let isCollapsed = false;
     let currentData = { ip: null, interface: null, sn: null, mac: null };
+    let currentContract = null;
 
     // ==================== ФУНКЦИИ ДЛЯ ПРОВЕРКИ СТРАНИЦЫ ====================
     function isCustomerProfile() {
@@ -44,7 +45,39 @@
         return url.includes('core_section=customer') || url.includes('core_section=customer_info');
     }
 
-    // ==================== ФУНКЦИИ ДЛЯ ОБРАБОТКИ ДАННЫХ ====================
+    // ==================== ФУНКЦИИ ДЛЯ ИЗВЛЕЧЕНИЯ ДАННЫХ ====================
+
+    function extractContractNumber() {
+        try {
+            const items = document.querySelectorAll('.item');
+            for (let item of items) {
+                const leftData = item.querySelector('.left_data');
+                if (leftData && leftData.textContent.includes('Договор:')) {
+                    const contractText = item.querySelector('div:not(.left_data)')?.textContent || '';
+                    const match = contractText.match(/(\d+)/);
+                    if (match) {
+                        console.log('📄 Найден номер договора:', match[1]);
+                        return match[1];
+                    }
+                }
+            }
+            
+            const allDivs = document.querySelectorAll('div');
+            for (let div of allDivs) {
+                if (div.textContent.includes('Договор:')) {
+                    const text = div.textContent;
+                    const match = text.match(/\b(\d{5,})\b/);
+                    if (match) {
+                        console.log('📄 Найден номер договора (альт):', match[1]);
+                        return match[1];
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Ошибка при извлечении номера договора:', e);
+        }
+        return null;
+    }
 
     function getIPType(ip) {
         if (CDATA_IPS.includes(ip)) return 'cdata';
@@ -113,7 +146,11 @@
                 }
             });
 
+            const contract = extractContractNumber();
+            currentContract = contract;
+
             currentData = { ip, interface: interface_, sn, mac };
+            console.log('📊 Данные:', currentData, 'Договор:', currentContract);
             return currentData;
         } catch (e) {
             console.error('Ошибка при извлечении данных:', e);
@@ -185,18 +222,161 @@
         alert('Не удалось скопировать. Текст:\n\n' + text);
     }
 
-    // Функция для открытия биллинга
-    function openBilling() {
-        console.log('🌐 Открываем биллинг');
-        window.open(BILLING_URL, '_blank');
+    // ==================== ФУНКЦИИ ДЛЯ КОПИРОВАНИЯ MAC ====================
+
+    function copyMacToClipboard(mac) {
+        console.log('📋 Копируем MAC:', mac);
+        
+        if (typeof GM_setClipboard !== 'undefined') {
+            try {
+                GM_setClipboard(mac);
+                showMacCopyNotification(mac);
+                return;
+            } catch (e) {}
+        }
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(mac).then(() => {
+                showMacCopyNotification(mac);
+            }).catch(() => fallbackMacCopy(mac));
+        } else {
+            fallbackMacCopy(mac);
+        }
     }
 
-    // Функция для открытия LTE устройства
+    function fallbackMacCopy(mac) {
+        try {
+            const textarea = document.createElement('textarea');
+            textarea.value = mac;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            showMacCopyNotification(mac);
+        } catch (err) {
+            console.error('Ошибка при копировании MAC:', err);
+            alert('Не удалось скопировать MAC. Скопируйте вручную:\n\n' + mac);
+        }
+    }
+
+    function showMacCopyNotification(mac) {
+        const notification = document.createElement('div');
+        notification.textContent = `✅ MAC ${mac} скопирован в буфер обмена`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: linear-gradient(135deg, #4CAF50, #45a049);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-family: 'Orbitron', Arial, sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000000;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            animation: slideIn 0.3s ease;
+        `;
+        
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.animation = 'slideIn 0.3s ease reverse';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+                style.remove();
+            }, 300);
+        }, 2000);
+    }
+
+    // ==================== ФУНКЦИИ ДЛЯ БИЛЛИНГА ====================
+
+    function openBilling() {
+        console.log('🌐 Открываем биллинг');
+        
+        const baseUrl = 'https://billing.timernet.ru/#accounts';
+        
+        if (currentContract) {
+            // Сохраняем номер договора в localStorage для второго скрипта
+            try {
+                localStorage.setItem('billing_search_contract', currentContract);
+                console.log('💾 Сохранили договор в localStorage:', currentContract);
+            } catch (e) {
+                console.error('Ошибка сохранения в localStorage:', e);
+            }
+            
+            const searchUrl = `${baseUrl}?contract=${currentContract}`;
+            window.open(searchUrl, '_blank');
+        } else {
+            window.open(baseUrl, '_blank');
+        }
+    }
+
+    // ==================== ФУНКЦИИ ДЛЯ LTE ====================
+
     function openLteDevice() {
         if (currentData.ip && LTE_IPS.includes(currentData.ip)) {
             const lteUrl = `http://${currentData.ip}/`;
-            console.log('📡 Открываем LTE устройство:', lteUrl);
-            window.open(lteUrl, '_blank');
+            console.log('📡 Открываем/переключаемся на LTE устройство:', lteUrl);
+            
+            if (currentData.mac) {
+                copyMacToClipboard(currentData.mac);
+            }
+            
+            const windowName = `lte_device_${currentData.ip.replace(/\./g, '_')}`;
+            
+            let existingWindow = null;
+            try {
+                existingWindow = window.open('', windowName);
+            } catch (e) {
+                console.log('Не удалось проверить существующее окно');
+            }
+            
+            if (existingWindow && !existingWindow.closed) {
+                try {
+                    if (existingWindow.closed) {
+                        window.open(lteUrl, windowName);
+                    } else {
+                        existingWindow.focus();
+                        
+                        try {
+                            if (existingWindow.location.href !== lteUrl) {
+                                existingWindow.location.href = lteUrl;
+                            }
+                        } catch (e) {
+                            console.log('Не удалось проверить URL существующего окна');
+                        }
+                    }
+                } catch (e) {
+                    console.log('Ошибка при работе с существующим окном, открываем новое');
+                    window.open(lteUrl, '_blank');
+                }
+            } else {
+                const newWindow = window.open(lteUrl, windowName);
+                if (!newWindow) {
+                    window.open(lteUrl, '_blank');
+                }
+            }
         }
     }
 
@@ -207,13 +387,11 @@
             return document.getElementById('userside-up-window');
         }
 
-        // Добавляем шрифт Orbitron
         const fontLink = document.createElement('link');
         fontLink.href = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap';
         fontLink.rel = 'stylesheet';
         document.head.appendChild(fontLink);
 
-        // Создаем контейнер
         const container = document.createElement('div');
         container.id = 'userside-container';
         container.style.cssText = `
@@ -226,18 +404,16 @@
             align-items: flex-end;
         `;
 
-        // Контейнер для иконок с фиксированной высотой
         const iconsWrapper = document.createElement('div');
         iconsWrapper.style.cssText = `
             position: relative;
-            width: 94px; /* 42px + 42px + 10px gap */
+            width: 94px;
             height: 32px;
             margin-bottom: -2px;
             align-self: flex-start;
             margin-left: 20px;
         `;
 
-        // Иконка для перехода в биллинг
         const billingIcon = document.createElement('div');
         billingIcon.id = 'billing-nav-icon';
         billingIcon.style.cssText = `
@@ -274,9 +450,8 @@
 
         billingIcon.appendChild(billingLogo);
 
-        // Тултип для биллинга
         const billingTooltip = document.createElement('div');
-        billingTooltip.textContent = 'Переход в BILLING';
+        billingTooltip.textContent = 'Переход в BILLING с поиском по договору';
         billingTooltip.style.cssText = `
             position: absolute;
             bottom: 100%;
@@ -317,7 +492,6 @@
 
         billingIcon.onclick = openBilling;
 
-        // Иконка для LTE
         const lteIcon = document.createElement('div');
         lteIcon.id = 'lte-nav-icon';
         lteIcon.style.cssText = `
@@ -360,7 +534,7 @@
         lteIcon.appendChild(lteText);
 
         const lteTooltip = document.createElement('div');
-        lteTooltip.textContent = 'Переход на LTE';
+        lteTooltip.textContent = 'Переход на LTE (MAC скопирован)';
         lteTooltip.style.cssText = `
             position: absolute;
             bottom: 100%;
@@ -404,7 +578,6 @@
         iconsWrapper.appendChild(billingIcon);
         iconsWrapper.appendChild(lteIcon);
 
-        // Создаем окно
         const window = document.createElement('div');
         window.id = 'userside-up-window';
         window.style.cssText = `
@@ -419,7 +592,6 @@
             border: 1px solid rgba(33, 150, 243, 0.2);
         `;
 
-        // Заголовок с градиентом
         const header = document.createElement('div');
         header.style.cssText = `
             background: linear-gradient(135deg, #2196F3, #1976D2);
@@ -526,7 +698,6 @@
         window.appendChild(header);
         window.appendChild(content);
 
-        // Собираем контейнер
         container.appendChild(iconsWrapper);
         container.appendChild(window);
         document.body.appendChild(container);
@@ -620,34 +791,26 @@
         const ipType = getIPType(data.ip);
         const processedInterface = processInterface(data.interface, data.ip);
 
-        // Показываем или скрываем иконку LTE
         if (lteIcon) {
             lteIcon.style.display = ipType === 'lte' ? 'block' : 'none';
         }
 
         content.innerHTML = `
-            <!-- IP строка -->
             <div class="data-row">
                 <span class="data-label">IP:</span>
                 <span id="ip-value" class="data-value">${data.ip || '-'}</span>
                 <button class="copy-btn" id="copy-ip" data-copy-text="${data.ip || ''}">📋</button>
             </div>
-
-            <!-- Interface строка -->
             <div class="data-row">
                 <span class="data-label">Interface:</span>
                 <span id="interface-value" class="data-value">${processedInterface || '-'}</span>
                 <button class="copy-btn" id="copy-interface" data-copy-text="${processedInterface || ''}">📋</button>
             </div>
-
-            <!-- SN строка (для Cdata) -->
             <div id="sn-row" class="data-row" style="display: ${ipType === 'cdata' ? 'flex' : 'none'};">
                 <span class="data-label">SN:</span>
                 <span id="sn-value" class="data-value">${data.sn || '-'}</span>
                 <button class="copy-btn" id="copy-sn" data-copy-text="${data.sn || ''}">📋</button>
             </div>
-
-            <!-- MAC строка (для LTE) -->
             <div id="mac-row" class="data-row" style="display: ${ipType === 'lte' ? 'flex' : 'none'};">
                 <span class="data-label">MAC:</span>
                 <span id="mac-value" class="data-value">${data.mac || '-'}</span>
@@ -655,7 +818,6 @@
             </div>
         `;
 
-        // Добавляем обработчики копирования
         ['sn', 'mac', 'ip', 'interface'].forEach(id => {
             const btn = document.getElementById(`copy-${id}`);
             if (btn) {
@@ -697,7 +859,6 @@
                 const container = elements.container;
                 const lteIcon = elements.lteIcon;
 
-                // Перетаскивание
                 let isDragging = false;
                 let offsetX, offsetY;
 
@@ -723,7 +884,6 @@
                     header.style.cursor = 'move';
                 };
 
-                // Кнопка свернуть/развернуть
                 toggleBtn.onclick = (e) => {
                     e.stopPropagation();
                     if (isCollapsed) {
@@ -738,7 +898,6 @@
                     isCollapsed = !isCollapsed;
                 };
 
-                // Кнопка закрыть
                 closeBtn.onclick = (e) => {
                     e.stopPropagation();
                     container.remove();
@@ -749,7 +908,6 @@
         }, 1500);
     }
 
-    // Запуск
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
