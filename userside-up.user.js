@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         USERSIDE UP - Data Display
 // @namespace    http://tampermonkey.net/
-// @version      5.9
+// @version      5.10
 // @description  Отображает SN/MAC/IP/Interface в профиле абонента + иконки перехода
 // @author       Max
 // @match        http://5.59.141.59:8080/oper/*
+// @match        http://192.168.1.146:8080/oper/*
 // @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/userside-up.user.js
 // @downloadURL  https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/userside-up.user.js
 // @grant        GM_addStyle
