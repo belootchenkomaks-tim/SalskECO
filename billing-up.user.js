@@ -198,12 +198,11 @@
         return cleanSoftSign(combined);
     }
 
-    // ИСПРАВЛЕННАЯ функция сохранения данных
+    // Функция сохранения данных
     function saveDataForUserside() {
         if (collectedData.contract) {
             const addressParts = extractAddressParts(collectedData.originalAddress || '');
 
-            // Формируем полный объект с данными
             const dataToSave = {
                 contract: collectedData.contract,
                 address: collectedData.address,
@@ -218,14 +217,10 @@
                 timestamp: Date.now()
             };
 
-            // Сохраняем под правильным ключом
             localStorage.setItem('timernet_to_userside', JSON.stringify(dataToSave));
-
-            // Для обратной совместимости также сохраняем номер договора отдельно
             localStorage.setItem('billing_search_contract', collectedData.contract);
 
             console.log('💾 Данные сохранены для USERSIDE:', dataToSave);
-            console.log('💾 Номер договора отдельно:', collectedData.contract);
         }
     }
 
@@ -251,6 +246,46 @@
         if (newTab) {
             newTab.focus();
         }
+    }
+
+    // Функция открытия USERSIDE
+    function openUserside() {
+        saveDataForUserside();
+
+        const contractNumber = collectedData.contract;
+
+        if (contractNumber) {
+            let cleanContract = contractNumber.replace(/[^0-9]/g, '');
+            let address = collectedData.originalAddress || collectedData.address || '';
+            const encodedAddress = encodeURIComponent(address);
+            const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${cleanContract}&address_data=${encodedAddress}`;
+
+            console.log('🔗 URL для USERSIDE:', usersideUrl);
+            window.open(usersideUrl, '_blank');
+        }
+    }
+
+    // ==================== ЗАПУСК РАСШИРЕНИЯ ====================
+    function launchExtension() {
+        // ID вашего расширения (замените на реальный ID из chrome://extensions/)
+        const extensionId = 'lcbpmlpbkgbojgpolfcblomlhhmoonle';
+
+        // Сохраняем текущие данные
+        saveDataForUserside();
+
+        // Сохраняем данные в localStorage для расширения
+        localStorage.setItem('billing_tools_data', JSON.stringify(collectedData));
+
+        // Запускаем расширение
+        const extensionUrl = `chrome-extension://${extensionId}/floating-panel.html`;
+        const popup = window.open(extensionUrl, 'BillingTools', 'width=350,height=500,popup=yes');
+
+        // Даем расширению время на загрузку
+        setTimeout(() => {
+            if (popup) {
+                popup.focus();
+            }
+        }, 500);
     }
 
     // Основная функция обновления данных
@@ -304,29 +339,6 @@
         }
     }
 
-  function openUserside() {
-    saveDataForUserside();
-
-    const contractNumber = collectedData.contract;
-
-    if (contractNumber) {
-        // Очищаем номер
-        let cleanContract = contractNumber.replace(/[^0-9]/g, '');
-
-        // Получаем адрес
-        let address = collectedData.originalAddress || collectedData.address || '';
-
-        // Кодируем адрес для URL
-        const encodedAddress = encodeURIComponent(address);
-
-        // Формируем URL с адресом
-        const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${cleanContract}&address_data=${encodedAddress}`;
-
-        console.log('🔗 URL для USERSIDE:', usersideUrl);
-        window.open(usersideUrl, '_blank');
-    }
-}
-
     function createWindow() {
         if (document.getElementById('timernet-container')) return;
 
@@ -359,14 +371,14 @@
         const iconsWrapper = document.createElement('div');
         iconsWrapper.style.cssText = `
             position: relative;
-            width: 94px;
+            width: 156px;
             height: 32px;
             margin-bottom: -2px;
             align-self: flex-start;
             margin-left: 10px;
         `;
 
-        // Иконка для перехода в USERSIDE
+        // ========== ИКОНКА USERSIDE (ПЕРВАЯ - слева) ==========
         const usersideIcon = document.createElement('div');
         usersideIcon.id = 'userside-nav-icon';
         usersideIcon.style.cssText = `
@@ -445,12 +457,95 @@
 
         usersideIcon.onclick = openUserside;
 
-        // Иконка для перехода на LTE
+        // ========== ИКОНКА РАКЕТА (ВТОРАЯ) ==========
+        const extensionIcon = document.createElement('div');
+        extensionIcon.id = 'extension-nav-icon';
+        extensionIcon.style.cssText = `
+            position: absolute;
+            left: 52px;
+            bottom: 0;
+            width: 42px;
+            height: 12px;
+            background: linear-gradient(135deg, #9C27B0, #7B1FA2);
+            border: none;
+            border-radius: 12px 12px 0px 0px;
+            box-shadow: 0 -2px 8px rgba(156, 39, 176, 0.3);
+            cursor: pointer;
+            overflow: hidden;
+            transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: auto;
+            z-index: 999999;
+        `;
+
+        const extensionText = document.createElement('span');
+        extensionText.textContent = '🚀';
+        extensionText.style.cssText = `
+            color: white;
+            font-family: 'Orbitron', Arial, sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 2;
+        `;
+
+        extensionIcon.appendChild(extensionText);
+
+        const extensionTooltip = document.createElement('div');
+        extensionTooltip.textContent = 'Запустить расширение';
+        extensionTooltip.style.cssText = `
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            font-family: 'Orbitron', Arial, sans-serif;
+            z-index: 1000000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 8px;
+        `;
+
+        extensionIcon.appendChild(extensionTooltip);
+
+        extensionIcon.onmouseover = () => {
+            extensionIcon.style.height = '32px';
+            extensionIcon.style.background = 'linear-gradient(135deg, #7B1FA2, #6A1B9A)';
+            extensionText.style.bottom = '8px';
+            extensionText.style.fontSize = '20px';
+            extensionTooltip.style.opacity = '1';
+        };
+
+        extensionIcon.onmouseout = () => {
+            extensionIcon.style.height = '12px';
+            extensionIcon.style.background = 'linear-gradient(135deg, #9C27B0, #7B1FA2)';
+            extensionText.style.bottom = '-5px';
+            extensionText.style.fontSize = '16px';
+            extensionTooltip.style.opacity = '0';
+        };
+
+        extensionIcon.onclick = launchExtension;
+
+        // ========== ИКОНКА LTE (ТРЕТЬЯ) ==========
         const lteIcon = document.createElement('div');
         lteIcon.id = 'lte-nav-icon';
         lteIcon.style.cssText = `
             position: absolute;
-            left: 52px;
+            left: 104px;
             bottom: 0;
             width: 42px;
             height: 12px;
@@ -529,8 +624,13 @@
 
         lteIcon.onclick = openLteDevice;
 
-        iconsWrapper.appendChild(usersideIcon);
-        iconsWrapper.appendChild(lteIcon);
+        // Добавляем иконки в правильном порядке:
+        // 1. USERSIDE (слева)
+        // 2. Ракета (посередине)
+        // 3. LTE (справа)
+        iconsWrapper.appendChild(usersideIcon);  // 🔍 - ПЕРВАЯ
+        iconsWrapper.appendChild(extensionIcon); // 🚀 - ВТОРАЯ
+        iconsWrapper.appendChild(lteIcon);       // 📡 - ТРЕТЬЯ
 
         const window = document.createElement('div');
         window.id = 'timernet-window';
