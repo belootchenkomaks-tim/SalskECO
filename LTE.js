@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         LTE - Set Favicon & One-Time Login
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Устанавливает иконку и выполняет автологин только один раз на странице входа
 // @author       Max
 // @match        http://172.18.0.100
