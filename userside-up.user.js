@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USERSIDE UP - Data Display
 // @namespace    http://tampermonkey.net/
-// @version      10.2
+// @version      10.3
 // @description  Отображает SN/MAC/IP/Interface/Сигнал + кнопка DIAG + управление LTE вкладками + корона главного окна
 // @author       Max
 // @match        http://5.59.141.59:8080/oper/?core_section=customer*
@@ -766,7 +766,9 @@ function performOpenAllLte() {
 
     let opened = 0;
     let currentIndex = 0;
-    const mainWindow = window; // Сохраняем ссылку на текущее окно
+
+    // Создаем массив с задержками
+    const delays = [100, 300, 500, 700, 900, 1100, 1300, 1500, 1700, 1900, 2100];
 
     function openNextTab() {
         if (currentIndex >= LTE_IPS.length) {
@@ -779,40 +781,40 @@ function performOpenAllLte() {
         const lastOctet = ip.split('.')[3];
         const tabName = `LTE-${lastOctet}`;
 
-        console.log(`🔄 Открываем ${tabName} (${currentIndex + 1}/${LTE_IPS.length})`);
+        console.log(`🔄 Открываем ${tabName} с задержкой ${delays[currentIndex]}мс`);
 
-        const newWindow = window.open(lteUrl, tabName);
+        // Используем setTimeout с увеличивающейся задержкой
+        setTimeout(() => {
+            const newWindow = window.open(lteUrl, tabName);
 
-        if (newWindow) {
-            opened++;
+            if (newWindow) {
+                opened++;
 
-            lteTabsState[ip] = {
-                name: tabName,
-                lastSeen: Date.now(),
-                active: true,
-                url: lteUrl
-            };
+                lteTabsState[ip] = {
+                    name: tabName,
+                    lastSeen: Date.now(),
+                    active: true,
+                    url: lteUrl
+                };
 
-            syncChannel.postMessage({
-                type: 'lte-opened',
-                payload: { ip, name: tabName, url: lteUrl },
-                fromWindow: windowId
-            });
+                syncChannel.postMessage({
+                    type: 'lte-opened',
+                    payload: { ip, name: tabName, url: lteUrl },
+                    fromWindow: windowId
+                });
 
-            // Пытаемся вернуть фокус на исходное окно
-            setTimeout(() => {
-                try {
-                    mainWindow.focus();
-                } catch (e) {}
-            }, 200);
-        }
+                console.log(`✅ Открыта ${tabName} (${opened}/${LTE_IPS.length})`);
+            } else {
+                console.log(`❌ Не удалось открыть ${tabName}`);
+            }
 
-        currentIndex++;
-        setTimeout(openNextTab, 1000); // Задержка 1 секунда
+            currentIndex++;
+            openNextTab(); // Рекурсивно вызываем следующую
+        }, delays[currentIndex]);
     }
 
     saveLteState();
-    setTimeout(openNextTab, 500);
+    openNextTab(); // Запускаем без начальной задержки
 }
   function openAllLteTabs() {
     console.log('🚀 Запрос на открытие всех LTE вкладок');
