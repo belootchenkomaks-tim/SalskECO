@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         USERSIDE UP - Data Display
 // @namespace    http://tampermonkey.net/
-// @version      10.1
+// @version      10.2
 // @description  Отображает SN/MAC/IP/Interface/Сигнал + кнопка DIAG + управление LTE вкладками + корона главного окна
 // @author       Max
 // @match        http://5.59.141.59:8080/oper/?core_section=customer*
@@ -761,70 +761,12 @@
     }
 
     // ==================== ФУНКЦИИ УПРАВЛЕНИЯ LTE ====================
-
-    function performOpenAllLte() {
-        console.log('🚀 ===== ОТКРЫТИЕ ВСЕХ LTE =====');
-
-        let opened = 0;
-        let currentIndex = 0;
-
-        function openNextTab() {
-            if (currentIndex >= LTE_IPS.length) {
-                showLteNotification(`🚀 Открыто ${opened} LTE вкладок`, 'success');
-                return;
-            }
-
-            const ip = LTE_IPS[currentIndex];
-            const lteUrl = `http://${ip}/`;
-            const lastOctet = ip.split('.')[3];
-            const tabName = `LTE-${lastOctet}`;
-
-            const newWindow = window.open(lteUrl, tabName);
-
-            if (newWindow) {
-                opened++;
-
-                lteTabsState[ip] = {
-                    name: tabName,
-                    lastSeen: Date.now(),
-                    active: true,
-                    url: lteUrl
-                };
-
-                syncChannel.postMessage({
-                    type: 'lte-opened',
-                    payload: { ip, name: tabName, url: lteUrl },
-                    fromWindow: windowId
-                });
-            }
-
-            currentIndex++;
-            setTimeout(openNextTab, 600);
-        }
-
-        saveLteState();
-        setTimeout(openNextTab, 500);
-    }
-
-  function openAllLteTabs() {
-    console.log('🚀 Запрос на открытие всех LTE вкладок');
-
-    if (isMasterWindow) {
-        performOpenAllLte();
-    } else {
-        syncChannel.postMessage({
-            type: 'open-all-request',
-            fromWindow: windowId
-        });
-        showLteNotification('🔄 Запрос на открытие всех LTE отправлен', 'info');
-    }
-}
-
 function performOpenAllLte() {
     console.log('🚀 ===== ОТКРЫТИЕ ВСЕХ LTE =====');
 
     let opened = 0;
     let currentIndex = 0;
+    const mainWindow = window; // Сохраняем ссылку на текущее окно
 
     function openNextTab() {
         if (currentIndex >= LTE_IPS.length) {
@@ -836,6 +778,8 @@ function performOpenAllLte() {
         const lteUrl = `http://${ip}/`;
         const lastOctet = ip.split('.')[3];
         const tabName = `LTE-${lastOctet}`;
+
+        console.log(`🔄 Открываем ${tabName} (${currentIndex + 1}/${LTE_IPS.length})`);
 
         const newWindow = window.open(lteUrl, tabName);
 
@@ -854,14 +798,34 @@ function performOpenAllLte() {
                 payload: { ip, name: tabName, url: lteUrl },
                 fromWindow: windowId
             });
+
+            // Пытаемся вернуть фокус на исходное окно
+            setTimeout(() => {
+                try {
+                    mainWindow.focus();
+                } catch (e) {}
+            }, 200);
         }
 
         currentIndex++;
-        setTimeout(openNextTab, 800); // УВЕЛИЧЬТЕ ЭТО ЗНАЧЕНИЕ!
+        setTimeout(openNextTab, 1000); // Задержка 1 секунда
     }
 
     saveLteState();
     setTimeout(openNextTab, 500);
+}
+  function openAllLteTabs() {
+    console.log('🚀 Запрос на открытие всех LTE вкладок');
+
+    if (isMasterWindow) {
+        performOpenAllLte();
+    } else {
+        syncChannel.postMessage({
+            type: 'open-all-request',
+            fromWindow: windowId
+        });
+        showLteNotification('🔄 Запрос на открытие всех LTE отправлен', 'info');
+    }
 }
 
     function closeAllLteTabs() {
