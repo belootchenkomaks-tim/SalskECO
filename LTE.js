@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         LTE - Set Favicon & One-Time Login
+// @name         LTE - Set Favicon & Keep Session Alive
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Устанавливает иконку и выполняет автологин только один раз на странице входа
+// @version      2.0
+// @description  Устанавливает иконку, автологин и поддерживает сессию активной
 // @author       Max
 // @match        http://172.18.0.100
 // @match        http://172.18.0.100/*
@@ -28,8 +28,6 @@
 // @match        http://172.18.0.110/*
 // @grant        none
 // @run-at       document-start
-// @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/LTE.js
-// @downloadURL  https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/LTE.js
 // ==/UserScript==
 
 (function() {
@@ -47,7 +45,7 @@
         displayNumber = lastOctet.slice(-1);
     }
 
-    // ==================== УСТАНОВКА ИКОНКИ (ВСЕГДА) ====================
+    // ==================== УСТАНОВКА ИКОНКИ ====================
 
     const canvas = document.createElement('canvas');
     canvas.width = 32;
@@ -94,12 +92,10 @@
         }
     }
 
-    // ==================== АВТОЛОГИН ТОЛЬКО 1 РАЗ ====================
+    // ==================== АВТОЛОГИН (ТОЛЬКО 1 РАЗ) ====================
 
-    // Проверяем, что это страница входа
     if (window.location.pathname === '/login' || window.location.pathname === '/login.html' || window.location.pathname === '/') {
 
-        // Используем sessionStorage для отметки, что уже авторизовались
         if (!sessionStorage.getItem('lte_auto_login_done')) {
 
             console.log(`🔐 LTE-${lastOctet}: Автологин через 10 секунд...`);
@@ -112,10 +108,8 @@
                     usernameField.value = 'admin';
                     passwordField.value = 'password';
 
-                    // Отмечаем, что автологин выполнен
                     sessionStorage.setItem('lte_auto_login_done', 'true');
 
-                    // Ищем кнопку отправки
                     const submitButton = document.querySelector('input[type="submit"], button[type="submit"]');
                     if (submitButton) {
                         submitButton.click();
@@ -126,8 +120,79 @@
 
                     console.log(`✅ LTE-${lastOctet}: Автологин выполнен`);
                 }
-            }, 10000); // 10 секунд
+            }, 10000);
         }
     }
+
+    // ==================== ПОДДЕРЖАНИЕ СЕССИИ ====================
+
+    // Функция для отправки "пинга" на сервер
+    function keepSessionAlive() {
+        // Просто запрашиваем любую страницу, чтобы сервер видел активность
+        fetch(window.location.href, {
+            method: 'HEAD',  // HEAD запрос легче, чем GET
+            cache: 'no-cache',
+            credentials: 'same-origin'  // передаем куки авторизации
+        }).then(() => {
+            console.log(`💓 LTE-${lastOctet}: Пинг отправлен, сессия активна`);
+        }).catch(err => {
+            // Ошибка может быть если сессия уже умерла - ничего страшного
+            console.log(`⚠️ LTE-${lastOctet}: Ошибка пинга:`, err);
+        });
+    }
+
+    // Переменная для таймера
+    let inactivityTimer;
+    const SESSION_TIMEOUT = 55 * 60 * 1000; // 55 минут (чуть меньше часа)
+
+    // Функция сброса таймера при активности
+    function resetInactivityTimer() {
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+        }
+
+        // Устанавливаем новый таймер - через 55 минут бездействия отправим пинг
+        inactivityTimer = setTimeout(() => {
+            console.log(`⏰ LTE-${lastOctet}: 55 минут бездействия, отправляем пинг...`);
+            keepSessionAlive();
+            // После пинга перезапускаем таймер
+            resetInactivityTimer();
+        }, SESSION_TIMEOUT);
+    }
+
+    // Слушаем события активности пользователя
+    const activityEvents = [
+        'mousedown', 'mousemove', 'keydown',
+        'scroll', 'touchstart', 'click'
+    ];
+
+    function onUserActivity() {
+        resetInactivityTimer();
+    }
+
+    // Добавляем обработчики событий
+    activityEvents.forEach(eventType => {
+        window.addEventListener(eventType, onUserActivity, { passive: true });
+    });
+
+    // Также учитываем видимость страницы (переключение вкладок)
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            // Пользователь вернулся на вкладку - сбрасываем таймер
+            resetInactivityTimer();
+            // И сразу отправляем пинг, чтобы точно активировать сессию
+            keepSessionAlive();
+        }
+    });
+
+    // Запускаем таймер при загрузке страницы
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', resetInactivityTimer);
+    } else {
+        resetInactivityTimer();
+    }
+
+    // Также отправляем пинг сразу при загрузке страницы
+    setTimeout(keepSessionAlive, 5000);
 
 })();
