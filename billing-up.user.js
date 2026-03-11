@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      8.0
+// @version      8.1
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       You
 // @match        https://billing.timernet.ru/*
@@ -60,19 +60,39 @@
         return text.replace(/[ьЪ]/g, '');
     }
 
-    function getContractNumber() {
-        const contractInput = document.querySelector('input[name="agrm_id"]');
-        if (contractInput && contractInput.value) {
-            let contract = contractInput.value;
-            contract = contract.replace(/юлс[-]?/i, 'ULS-');
-            if (contract.match(/^ULS\d/)) {
-                contract = contract.replace(/^ULS/, 'ULS-');
-            }
-            return contract;
+ function getContractNumber() {
+    const contractInput = document.querySelector('input[name="agrm_id"]');
+    if (contractInput && contractInput.value) {
+        let contract = contractInput.value;
+        // Заменяем "юлс" на "ULS_" (с подчеркиванием) для внутреннего использования
+        contract = contract.replace(/юлс[-]?/i, 'ULS_');
+        if (contract.match(/^ULS\d/)) {
+            contract = contract.replace(/^ULS/, 'ULS_');
         }
-        return '';
+        return contract;
     }
+    return '';
+}
 
+function openUserside() {
+    saveDataForUserside();
+
+    const contractNumber = collectedData.contract;
+
+    if (contractNumber) {
+        // Преобразуем ULS_0065 обратно в ЮЛС-0065 для поиска в USERSIDE
+        let searchContract = contractNumber
+            .replace(/^ULS_/i, 'ЮЛС-') // ULS_ -> ЮЛС-
+            .replace(/^ULS-/i, 'ЮЛС-'); // На всякий случай, если где-то остался дефис
+
+        let address = collectedData.originalAddress || collectedData.address || '';
+        const encodedAddress = encodeURIComponent(address);
+        const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${encodeURIComponent(searchContract)}&address_data=${encodedAddress}from=billing`;
+
+        console.log('🔗 URL для USERSIDE:', usersideUrl);
+        window.open(usersideUrl, '_blank');
+    }
+}
     function getAddress() {
         const allDisplayFields = document.querySelectorAll('.x-form-display-field');
         for (let element of allDisplayFields) {
@@ -167,36 +187,36 @@
         return { street, house, apartment };
     }
 
-    function createCombinedParam(contract, address, parts) {
-        if (!contract || !address) return '';
+  function createCombinedParam(contract, address, parts) {
+    if (!contract || !address) return '';
 
-        const { street, house, apartment } = parts;
-        let combined = contract;
+    const { street, house, apartment } = parts;
+    let combined = contract; // Здесь уже будет ULS_0065
 
-        if (street) {
-            let cleanStreet = transliterate(street);
-            cleanStreet = cleanSoftSign(cleanStreet);
-            cleanStreet = cleanStreet.replace(/\s+/g, '_');
-            cleanStreet = cleanStreet.charAt(0).toUpperCase() + cleanStreet.slice(1).toLowerCase();
-            combined += '_' + cleanStreet;
-        }
-
-        if (house) {
-            let cleanHouse = transliterate(house);
-            cleanHouse = cleanSoftSign(cleanHouse);
-            cleanHouse = cleanHouse.replace(/\s+/g, '');
-            combined += '_' + cleanHouse;
-        }
-
-        if (apartment) {
-            let cleanApartment = transliterate(apartment);
-            cleanApartment = cleanSoftSign(cleanApartment);
-            cleanApartment = cleanApartment.replace(/\s+/g, '');
-            combined += '_kv' + cleanApartment;
-        }
-
-        return cleanSoftSign(combined);
+    if (street) {
+        let cleanStreet = transliterate(street);
+        cleanStreet = cleanSoftSign(cleanStreet);
+        cleanStreet = cleanStreet.replace(/\s+/g, '_');
+        cleanStreet = cleanStreet.charAt(0).toUpperCase() + cleanStreet.slice(1).toLowerCase();
+        combined += '_' + cleanStreet;
     }
+
+    if (house) {
+        let cleanHouse = transliterate(house);
+        cleanHouse = cleanSoftSign(cleanHouse);
+        cleanHouse = cleanHouse.replace(/\s+/g, '');
+        combined += '_' + cleanHouse;
+    }
+
+    if (apartment) {
+        let cleanApartment = transliterate(apartment);
+        cleanApartment = cleanSoftSign(cleanApartment);
+        cleanApartment = cleanApartment.replace(/\s+/g, '');
+        combined += '_kv' + cleanApartment;
+    }
+
+    return cleanSoftSign(combined);
+}
 
     // Функция сохранения данных
     function saveDataForUserside() {
@@ -248,23 +268,7 @@
         }
     }
 
-    // Функция открытия USERSIDE
-    function openUserside() {
-        saveDataForUserside();
-
-        const contractNumber = collectedData.contract;
-
-        if (contractNumber) {
-            let cleanContract = contractNumber.replace(/[^0-9]/g, '');
-            let address = collectedData.originalAddress || collectedData.address || '';
-            const encodedAddress = encodeURIComponent(address);
-            const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${cleanContract}&address_data=${encodedAddress}`;
-
-            console.log('🔗 URL для USERSIDE:', usersideUrl);
-            window.open(usersideUrl, '_blank');
-        }
-    }
-
+  
     // ==================== ЗАПУСК РАСШИРЕНИЯ ====================
     function launchExtension() {
         // ID вашего расширения (замените на реальный ID из chrome://extensions/)
