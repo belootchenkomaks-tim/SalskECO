@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      8.1
+// @version      9.0
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       You
 // @match        https://billing.timernet.ru/*
@@ -13,7 +13,10 @@
 (function() {
     'use strict';
 
-    // Хранилище для данных
+    // ==================== КОНФИГУРАЦИЯ ====================
+
+    const EXTENSION_ID = 'ociajmahhgljbachndhfkcfjffbebdgj';
+
     let collectedData = {
         contract: '',
         address: '',
@@ -21,10 +24,11 @@
         cdataNumber: '',
         vlan: '',
         combined: '',
-        originalAddress: ''
+        originalAddress: '',
+        descWithoutContract: '',
+        olt: ''
     };
 
-    // Добавляем переменную для хранения последнего договора и адреса
     let lastContract = '';
     let lastAddress = '';
     let lastDesc = '';
@@ -38,6 +42,33 @@
         '172.18.0.106', '172.18.0.107', '172.18.0.108',
         '172.18.0.109', '172.18.0.110'
     ];
+
+    const NTE_PROFILES = [
+        'Vlan-Pass',
+        'NTE-2-VPU',
+        'NTE-RG-VPU',
+        'NTE-RG-Rev-B-VPU',
+        'NTE-RG-1402-VPU Multi',
+        'NTE-RG-PPPoE',
+        'NTE-2-PPPoE',
+        'BG',
+        'NTE-RG-1402-PPPoE Multi',
+        'NTE-2-2inet',
+        'SKAT-NTE-2-PPPoE',
+        'SKAT-NTE-RG-PPPoE',
+        'SKAT-NTE-RG-Rev-B-PPPoE',
+        'SKAT-NTE-RG-1421G-PPPoE'
+    ];
+
+    let currentView = 'main';
+    let nteFormState = {
+        status: 'not_connected',
+        mac: '',
+        profile: NTE_PROFILES[0],
+        profileAutoDetected: false
+    };
+
+    // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
     function transliterate(text) {
         text = text.replace(/[ьЪ]/g, '');
@@ -60,39 +91,38 @@
         return text.replace(/[ьЪ]/g, '');
     }
 
- function getContractNumber() {
-    const contractInput = document.querySelector('input[name="agrm_id"]');
-    if (contractInput && contractInput.value) {
-        let contract = contractInput.value;
-        // Заменяем "юлс" на "ULS_" (с подчеркиванием) для внутреннего использования
-        contract = contract.replace(/юлс[-]?/i, 'ULS_');
-        if (contract.match(/^ULS\d/)) {
-            contract = contract.replace(/^ULS/, 'ULS_');
+    function getContractNumber() {
+        const contractInput = document.querySelector('input[name="agrm_id"]');
+        if (contractInput && contractInput.value) {
+            let contract = contractInput.value;
+            contract = contract.replace(/юлс[-]?/i, 'ULS_');
+            if (contract.match(/^ULS\d/)) {
+                contract = contract.replace(/^ULS/, 'ULS_');
+            }
+            return contract;
         }
-        return contract;
+        return '';
     }
-    return '';
-}
 
-function openUserside() {
-    saveDataForUserside();
+    function openUserside() {
+        saveDataForUserside();
 
-    const contractNumber = collectedData.contract;
+        const contractNumber = collectedData.contract;
 
-    if (contractNumber) {
-        // Преобразуем ULS_0065 обратно в ЮЛС-0065 для поиска в USERSIDE
-        let searchContract = contractNumber
-            .replace(/^ULS_/i, 'ЮЛС-') // ULS_ -> ЮЛС-
-            .replace(/^ULS-/i, 'ЮЛС-'); // На всякий случай, если где-то остался дефис
+        if (contractNumber) {
+            let searchContract = contractNumber
+                .replace(/^ULS_/i, 'ЮЛС-')
+                .replace(/^ULS-/i, 'ЮЛС-');
 
-        let address = collectedData.originalAddress || collectedData.address || '';
-        const encodedAddress = encodeURIComponent(address);
-        const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${encodeURIComponent(searchContract)}&address_data=${encodedAddress}from=billing`;
+            let address = collectedData.originalAddress || collectedData.address || '';
+            const encodedAddress = encodeURIComponent(address);
+            const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${encodeURIComponent(searchContract)}&address_data=${encodedAddress}from=billing`;
 
-        console.log('🔗 URL для USERSIDE:', usersideUrl);
-        window.open(usersideUrl, '_blank');
+            console.log('🔗 URL для USERSIDE:', usersideUrl);
+            window.open(usersideUrl, '_blank');
+        }
     }
-}
+
     function getAddress() {
         const allDisplayFields = document.querySelectorAll('.x-form-display-field');
         for (let element of allDisplayFields) {
@@ -134,6 +164,33 @@ function openUserside() {
                 return text.split(':')[1];
             }
         }
+        return '';
+    }
+
+    function getOlt() {
+        const allDisplayFields = document.querySelectorAll('.x-form-display-field');
+        for (let element of allDisplayFields) {
+            const text = element.textContent.trim();
+            if (text.includes('OLT-') && text.match(/\d+\.\d+\.\d+\.\d+/)) {
+                const ipMatch = text.match(/\d+\.\d+\.\d+\.\d+/);
+                if (ipMatch) {
+                    console.log('✅ OLT найден в поле с OLT-:', ipMatch[0]);
+                    return ipMatch[0];
+                }
+            }
+            if (text.startsWith('OLT-')) {
+                const oltValue = text.replace('OLT-', '').trim();
+                console.log('✅ OLT найден (текст):', oltValue);
+                return oltValue;
+            }
+        }
+
+        if (collectedData.ip) {
+            console.log('✅ Используем IP адрес как OLT:', collectedData.ip);
+            return collectedData.ip;
+        }
+
+        console.log('⚠️ OLT не найден');
         return '';
     }
 
@@ -187,38 +244,71 @@ function openUserside() {
         return { street, house, apartment };
     }
 
-  function createCombinedParam(contract, address, parts) {
-    if (!contract || !address) return '';
+    function createCombinedParam(contract, address, parts) {
+        if (!contract || !address) return '';
 
-    const { street, house, apartment } = parts;
-    let combined = contract; // Здесь уже будет ULS_0065
+        const { street, house, apartment } = parts;
+        let combined = contract;
 
-    if (street) {
-        let cleanStreet = transliterate(street);
-        cleanStreet = cleanSoftSign(cleanStreet);
-        cleanStreet = cleanStreet.replace(/\s+/g, '_');
-        cleanStreet = cleanStreet.charAt(0).toUpperCase() + cleanStreet.slice(1).toLowerCase();
-        combined += '_' + cleanStreet;
+        if (street) {
+            let cleanStreet = transliterate(street);
+            cleanStreet = cleanSoftSign(cleanStreet);
+            cleanStreet = cleanStreet.replace(/\s+/g, '_');
+            cleanStreet = cleanStreet.charAt(0).toUpperCase() + cleanStreet.slice(1).toLowerCase();
+            combined += '_' + cleanStreet;
+        }
+
+        if (house) {
+            let cleanHouse = transliterate(house);
+            cleanHouse = cleanSoftSign(cleanHouse);
+            cleanHouse = cleanHouse.replace(/\s+/g, '');
+            combined += '_' + cleanHouse;
+        }
+
+        if (apartment) {
+            let cleanApartment = transliterate(apartment);
+            cleanApartment = cleanSoftSign(cleanApartment);
+            cleanApartment = cleanApartment.replace(/\s+/g, '');
+            combined += '_kv' + cleanApartment;
+        }
+
+        return cleanSoftSign(combined);
     }
 
-    if (house) {
-        let cleanHouse = transliterate(house);
-        cleanHouse = cleanSoftSign(cleanHouse);
-        cleanHouse = cleanHouse.replace(/\s+/g, '');
-        combined += '_' + cleanHouse;
+    function getDescWithoutContract() {
+        if (!collectedData.combined || !collectedData.contract) return '';
+        let desc = collectedData.combined;
+        const contractBase = collectedData.contract.replace(/^ULS_?/i, '');
+        desc = desc.replace(new RegExp(`^${collectedData.contract}`), '');
+        desc = desc.replace(new RegExp(`^ULS_?${contractBase}`), '');
+        desc = desc.replace(new RegExp(`^ULS[-_]?`, 'i'), '');
+        desc = desc.replace(/^_/, '');
+        return desc;
     }
 
-    if (apartment) {
-        let cleanApartment = transliterate(apartment);
-        cleanApartment = cleanSoftSign(cleanApartment);
-        cleanApartment = cleanApartment.replace(/\s+/g, '');
-        combined += '_kv' + cleanApartment;
+    function formatMAC(mac) {
+        mac = mac.toUpperCase().replace(/[^0-9A-F]/g, '');
+        if (mac.length !== 12) return mac;
+        return mac.match(/.{2}/g).join(':');
     }
 
-    return cleanSoftSign(combined);
-}
+    function detectProfileByMAC(mac) {
+        const cleanMac = mac.toUpperCase().replace(/[^0-9A-F]/g, '');
+        const prefix = cleanMac.substring(0, 6);
 
-    // Функция сохранения данных
+        if (prefix === '02005E') {
+            console.log('✅ Обнаружен MAC ICT (02:00:5E), профиль: NTE-2-VPU');
+            return 'NTE-2-VPU';
+        }
+
+        if (prefix === '02004B') {
+            console.log('✅ Обнаружен MAC ZTE (02:00:4B), профиль: NTE-RG-VPU');
+            return 'NTE-RG-VPU';
+        }
+
+        return null;
+    }
+
     function saveDataForUserside() {
         if (collectedData.contract) {
             const addressParts = extractAddressParts(collectedData.originalAddress || '');
@@ -268,23 +358,12 @@ function openUserside() {
         }
     }
 
-  
-    // ==================== ЗАПУСК РАСШИРЕНИЯ ====================
     function launchExtension() {
-        // ID вашего расширения (замените на реальный ID из chrome://extensions/)
-        const extensionId = 'lcbpmlpbkgbojgpolfcblomlhhmoonle';
-
-        // Сохраняем текущие данные
+        const extensionId = 'ociajmahhgljbachndhfkcfjffbebdgj';
         saveDataForUserside();
-
-        // Сохраняем данные в localStorage для расширения
         localStorage.setItem('billing_tools_data', JSON.stringify(collectedData));
-
-        // Запускаем расширение
         const extensionUrl = `chrome-extension://${extensionId}/floating-panel.html`;
         const popup = window.open(extensionUrl, 'BillingTools', 'width=350,height=500,popup=yes');
-
-        // Даем расширению время на загрузку
         setTimeout(() => {
             if (popup) {
                 popup.focus();
@@ -292,39 +371,86 @@ function openUserside() {
         }, 500);
     }
 
-    // Основная функция обновления данных
+    function copyNTEConfig(nteStatus, macAddress, selectedProfile) {
+        const desc = collectedData.descWithoutContract || getDescWithoutContract();
+        const vlan = collectedData.vlan;
+        const olt = collectedData.olt;
+
+        let formattedMac = macAddress;
+        if (macAddress && !macAddress.includes(':')) {
+            formattedMac = formatMAC(macAddress);
+        }
+
+        const output = `MAC: ${formattedMac || '—'}
+Profile: ${selectedProfile}
+OLT: ${olt || '—'}
+Vlan: ${vlan || '—'}
+Desc: ${desc || '—'}`;
+
+        navigator.clipboard.writeText(output).then(() => {
+            showNotification('✅ Данные скопированы в буфер обмена', 'success');
+        }).catch(err => {
+            console.error('Ошибка копирования:', err);
+            showNotification('❌ Ошибка копирования', 'error');
+        });
+    }
+
+    function showNotification(message, type) {
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: ${type === 'success' ? '#4CAF50' : '#F44336'};
+            color: white;
+            border-radius: 8px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 10000000;
+            animation: slideIn 0.3s ease;
+        `;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
     function updateCollectedData() {
         const newContract = getContractNumber();
         const newAddress = getAddress();
         const { ip: newIp, cdataNumber: newCdataNumber } = getIpAndCdataNumber();
         const newVlan = getVlan();
+        let newOlt = getOlt();
 
-        console.log('🔍 Проверка данных:', {
-            contract: newContract,
-            address: newAddress ? newAddress.substring(0, 50) + '...' : 'нет',
-            ip: newIp,
-            cdata: newCdataNumber,
-            vlan: newVlan
-        });
+        if (!newOlt && newIp) {
+            newOlt = newIp;
+        }
 
         const contractChanged = newContract !== lastContract;
         const addressChanged = newAddress !== lastAddress;
 
         if (contractChanged || addressChanged) {
-            console.log('📢 Обнаружены изменения');
-
             collectedData.contract = newContract;
             collectedData.address = newAddress;
             collectedData.originalAddress = newAddress;
             collectedData.ip = newIp;
             collectedData.cdataNumber = newCdataNumber;
             collectedData.vlan = newVlan;
+            collectedData.olt = newOlt;
 
             if (newContract && newAddress) {
                 const parts = extractAddressParts(newAddress);
                 collectedData.combined = createCombinedParam(newContract, newAddress, parts);
+                collectedData.descWithoutContract = getDescWithoutContract();
             } else {
                 collectedData.combined = '';
+                collectedData.descWithoutContract = '';
             }
 
             lastContract = newContract;
@@ -332,13 +458,540 @@ function openUserside() {
             lastDesc = collectedData.combined;
             ipFoundForCurrentDesc = !!newIp;
 
+            return true;
         } else {
             collectedData.ip = newIp || collectedData.ip;
             collectedData.cdataNumber = newCdataNumber || collectedData.cdataNumber;
             collectedData.vlan = newVlan || collectedData.vlan;
 
+            if (newOlt) {
+                collectedData.olt = newOlt;
+            } else if (!collectedData.olt && collectedData.ip) {
+                collectedData.olt = collectedData.ip;
+            }
+
+            collectedData.descWithoutContract = getDescWithoutContract();
+
             if (newIp && !ipFoundForCurrentDesc) {
                 ipFoundForCurrentDesc = true;
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    let container, content, toggleBtn, closeBtn, nteIcon;
+
+    function openNTEWizard() {
+        console.log('🔄 Открываем NTE Wizard');
+        currentView = 'nte-wizard';
+
+        if (!collectedData.olt) {
+            collectedData.olt = getOlt();
+            if (!collectedData.olt && collectedData.ip) {
+                collectedData.olt = collectedData.ip;
+            }
+        }
+
+        nteFormState.profileAutoDetected = false;
+
+        if (content) {
+            content.innerHTML = renderNTEView();
+            setupNTEEventListeners();
+        }
+
+        const titleSpan = document.querySelector('#timernet-window .header-title');
+        if (titleSpan) {
+            titleSpan.textContent = 'НАСТРОЙКА НТЕ';
+        }
+    }
+
+    function backToMain() {
+        console.log('🔄 Возвращаемся на главную');
+        saveNTEFormState();
+        currentView = 'main';
+
+        if (content) {
+            content.innerHTML = renderMainView();
+            setupCopyButtons();
+        }
+
+        const titleSpan = document.querySelector('#timernet-window .header-title');
+        if (titleSpan) {
+            titleSpan.textContent = 'BILLING UP';
+        }
+    }
+
+    function saveNTEFormState() {
+        const statusRadio = document.querySelector('input[name="nte-status"]:checked');
+        if (statusRadio) {
+            nteFormState.status = statusRadio.value;
+        }
+
+        const macInput = document.getElementById('nte-mac-input');
+        if (macInput) {
+            nteFormState.mac = macInput.value;
+        }
+
+        const profileSelect = document.getElementById('nte-profile-select');
+        if (profileSelect) {
+            nteFormState.profile = profileSelect.value;
+        }
+    }
+
+    function renderMainView() {
+        return `
+            <div style="margin-bottom: 12px; background: #e8f0fe; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="color: #1976D2; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">DESC</span>
+                    <button class="copy-btn" data-copy="${collectedData.combined || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                </div>
+                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #1a237e; line-height: 1.4; font-weight: 500;">${collectedData.combined || '—'}</div>
+            </div>
+
+            <div style="margin-bottom: 12px; background: #fce4ec; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="color: #c2185b; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">IP АДРЕС</span>
+                    <button class="copy-btn" data-copy="${collectedData.ip || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                </div>
+                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.4; font-weight: 500;">
+                    ${collectedData.ip || '—'}
+                    ${collectedData.cdataNumber ? `<span style="color: #666; font-size: 11px; margin-left: 5px;">(CDATA-${collectedData.cdataNumber})</span>` : ''}
+                </div>
+            </div>
+
+            <div style="margin-bottom: 0; background: #f5f5f5; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="color: #616161; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">VLAN</span>
+                    <button class="copy-btn" data-copy="${collectedData.vlan || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                </div>
+                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.4; font-weight: 500;">${collectedData.vlan || '—'}</div>
+            </div>
+        `;
+    }
+
+    function renderNTEView() {
+        const desc = collectedData.descWithoutContract || getDescWithoutContract();
+        const savedStatus = nteFormState.status;
+        const savedMac = nteFormState.mac;
+        const savedProfile = nteFormState.profile;
+
+        return `
+            <style>
+                .nte-wizard {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 15px;
+                }
+                .nte-section {
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                    padding: 12px;
+                    border: 1px solid #e0e0e0;
+                }
+                .nte-section-title {
+                    color: #FF9800;
+                    font-weight: 700;
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    margin-bottom: 10px;
+                }
+                .nte-data-row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 8px;
+                    font-size: 12px;
+                }
+                .nte-label {
+                    color: #666;
+                    font-weight: 500;
+                }
+                .nte-value {
+                    color: #333;
+                    font-weight: 600;
+                    font-family: 'SF Mono', monospace;
+                }
+                .nte-radio-group {
+                    display: flex;
+                    gap: 20px;
+                    margin-bottom: 10px;
+                }
+                .nte-radio-group label {
+                    display: flex;
+                    align-items: center;
+                    gap: 5px;
+                    cursor: pointer;
+                    font-size: 12px;
+                }
+                .nte-input {
+                    width: 100%;
+                    padding: 8px 10px;
+                    border: 1px solid #ddd;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    font-family: 'SF Mono', monospace;
+                    box-sizing: border-box;
+                    margin-bottom: 10px;
+                }
+                .nte-input:focus {
+                    outline: none;
+                    border-color: #FF9800;
+                    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.1);
+                }
+                .nte-select {
+                    width: 100%;
+                    padding: 8px 10px;
+                    border: 1px solid #ddd;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    background: white;
+                    cursor: pointer;
+                    margin-bottom: 10px;
+                }
+                .nte-select:focus {
+                    outline: none;
+                    border-color: #FF9800;
+                }
+                .nte-button {
+                    background: linear-gradient(135deg, #FF9800, #F57C00);
+                    color: white;
+                    border: none;
+                    padding: 10px 15px;
+                    border-radius: 6px;
+                    font-size: 12px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    font-family: 'Orbitron', sans-serif;
+                    letter-spacing: 0.5px;
+                    transition: all 0.2s;
+                    margin-top: 5px;
+                    width: 100%;
+                }
+                .nte-button:hover {
+                    background: linear-gradient(135deg, #F57C00, #E65100);
+                    transform: translateY(-1px);
+                    box-shadow: 0 4px 8px rgba(255, 152, 0, 0.3);
+                }
+                .nte-button-secondary {
+                    background: #6c757d;
+                    margin-top: 10px;
+                }
+                .nte-button-secondary:hover {
+                    background: #5a6268;
+                    box-shadow: 0 4px 8px rgba(108, 117, 125, 0.3);
+                }
+                .nte-hint {
+                    font-size: 10px;
+                    color: #999;
+                    margin-top: 5px;
+                }
+                .nte-mac-preview {
+                    font-size: 11px;
+                    color: #FF9800;
+                    margin-top: 5px;
+                    font-family: 'SF Mono', monospace;
+                }
+                .nte-warning {
+                    background: #fff3e0;
+                    border: 1px solid #ff9800;
+                    color: #e65100;
+                    padding: 8px;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    margin-bottom: 10px;
+                }
+                .preview-box {
+                    background: #f0f0f0;
+                    border-radius: 6px;
+                    padding: 10px;
+                    font-family: 'SF Mono', monospace;
+                    font-size: 11px;
+                    margin-bottom: 10px;
+                    white-space: pre-line;
+                    border: 1px solid #ddd;
+                }
+                .nte-profile-auto {
+                    background: #e8f5e9;
+                    color: #2e7d32;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                    margin-top: 5px;
+                }
+            </style>
+
+            <div class="nte-wizard">
+                <div class="nte-section">
+                    <div class="nte-section-title">📊 Данные из биллинга</div>
+                    <div class="nte-data-row">
+                        <span class="nte-label">DESC (без договора):</span>
+                        <span class="nte-value">${desc || '—'}</span>
+                    </div>
+                    <div class="nte-data-row">
+                        <span class="nte-label">OLT:</span>
+                        <span class="nte-value" style="${collectedData.olt ? 'color: #4CAF50;' : 'color: #f44336;'}">${collectedData.olt || '❌ НЕ НАЙДЕН'}</span>
+                    </div>
+                    <div class="nte-data-row">
+                        <span class="nte-label">VLAN:</span>
+                        <span class="nte-value" style="${collectedData.vlan ? 'color: #4CAF50;' : 'color: #f44336;'}">${collectedData.vlan || '❌ НЕ НАЙДЕН'}</span>
+                    </div>
+                </div>
+
+                <div class="nte-section">
+                    <div class="nte-section-title">🔌 Статус НТЕ</div>
+                    <div class="nte-radio-group">
+                        <label>
+                            <input type="radio" name="nte-status" value="not_connected" ${savedStatus === 'not_connected' ? 'checked' : ''}>
+                            Не подключена
+                        </label>
+                        <label>
+                            <input type="radio" name="nte-status" value="connected" ${savedStatus === 'connected' ? 'checked' : ''}>
+                            Подключена (unconfigured)
+                        </label>
+                    </div>
+                </div>
+
+                <div id="nte-dynamic-form" class="nte-section">
+                    <div class="nte-section-title" id="nte-form-title">${savedStatus === 'not_connected' ? '➕ Новая НТЕ' : '✅ НТЕ подключена'}</div>
+                    <div id="nte-form-content"></div>
+                </div>
+
+                ${!collectedData.olt || !collectedData.vlan ? `
+                    <div class="nte-warning">
+                        ⚠️ ${!collectedData.olt ? 'OLT не найден. ' : ''}${!collectedData.vlan ? 'VLAN не найден. ' : ''}
+                    </div>
+                ` : ''}
+
+                <div id="nte-preview" class="preview-box" style="display: none;"></div>
+
+                <button class="nte-button" id="nte-copy-config">📋 Скопировать данные</button>
+                <button class="nte-button nte-button-secondary" id="nte-back-to-main">◀ Назад</button>
+            </div>
+        `;
+    }
+
+    function setupNTEEventListeners() {
+        const statusRadios = document.querySelectorAll('input[name="nte-status"]');
+        const formTitle = document.getElementById('nte-form-title');
+        const formContent = document.getElementById('nte-form-content');
+        const previewBox = document.getElementById('nte-preview');
+
+        function updatePreview() {
+            const selectedStatus = document.querySelector('input[name="nte-status"]:checked').value;
+            const profileSelect = document.getElementById('nte-profile-select');
+            const selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
+            const desc = collectedData.descWithoutContract || getDescWithoutContract();
+            const vlan = collectedData.vlan;
+            const olt = collectedData.olt;
+
+            let macAddress = '';
+            if (selectedStatus === 'not_connected') {
+                const macInput = document.getElementById('nte-mac-input');
+                if (macInput) {
+                    const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
+                    if (rawMac.length === 12) {
+                        macAddress = formatMAC(rawMac);
+                    } else if (macInput.value) {
+                        macAddress = macInput.value;
+                    }
+                }
+            }
+
+            const formattedMac = macAddress || '—';
+
+            previewBox.style.display = 'block';
+            previewBox.innerHTML = `<strong>Предпросмотр:</strong>
+MAC: ${formattedMac}
+Profile: ${selectedProfile}
+OLT: ${olt || '—'}
+Vlan: ${vlan || '—'}
+Desc: ${desc || '—'}`;
+        }
+
+        function updateForm() {
+            const selectedStatus = document.querySelector('input[name="nte-status"]:checked').value;
+            nteFormState.status = selectedStatus;
+
+            if (selectedStatus === 'not_connected') {
+                formTitle.textContent = '➕ Новая НТЕ';
+                formContent.innerHTML = `
+                    <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">MAC-адрес:</label>
+                    <input type="text" id="nte-mac-input" class="nte-input" placeholder="02005E09DCF8 или 02:00:5E:09:DC:F8" maxlength="17" value="${nteFormState.mac}">
+                    <div id="nte-mac-preview" class="nte-mac-preview"></div>
+                    <div id="nte-profile-hint" class="nte-profile-auto"></div>
+
+                    <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px; margin-top: 10px;">Профиль:</label>
+                    <select id="nte-profile-select" class="nte-select">
+                        ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
+                    </select>
+                    <div class="nte-hint">Выберите профиль для данного типа НТЕ</div>
+                `;
+
+                const macInput = document.getElementById('nte-mac-input');
+                const macPreview = document.getElementById('nte-mac-preview');
+                const profileHint = document.getElementById('nte-profile-hint');
+                const profileSelect = document.getElementById('nte-profile-select');
+
+                function updateMacPreview() {
+                    let mac = macInput.value.toUpperCase();
+                    const rawMac = mac.replace(/[^0-9A-F]/g, '');
+
+                    if (rawMac.length >= 2) {
+                        const formatted = rawMac.match(/.{1,2}/g).join(':');
+                        macPreview.textContent = `Формат: ${formatted}`;
+                    } else {
+                        macPreview.textContent = rawMac ? 'Введите MAC' : '';
+                    }
+
+                    if (rawMac.length === 12) {
+                        macPreview.style.color = '#4CAF50';
+                        macPreview.textContent = `✅ MAC: ${formatMAC(rawMac)}`;
+
+                        if (!nteFormState.profileAutoDetected) {
+                            const detectedProfile = detectProfileByMAC(mac);
+                            if (detectedProfile) {
+                                profileSelect.value = detectedProfile;
+                                nteFormState.profile = detectedProfile;
+                                nteFormState.profileAutoDetected = true;
+
+                                let profileName = detectedProfile === 'NTE-2-VPU' ? 'NTE-2 (ICT)' : 'NTE-RG (ZTE)';
+                                profileHint.textContent = `🔍 Автоматически определен профиль: ${profileName}`;
+                                profileHint.style.cssText = 'background: #e8f5e9; color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
+                            } else {
+                                profileHint.textContent = '⚠️ MAC не распознан, выберите профиль вручную';
+                                profileHint.style.cssText = 'background: #fff3e0; color: #e65100; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
+                            }
+                        }
+                    } else if (rawMac.length > 0) {
+                        macPreview.style.color = '#FF9800';
+                        profileHint.textContent = '';
+                        nteFormState.profileAutoDetected = false;
+                    }
+
+                    nteFormState.mac = macInput.value;
+                    updatePreview();
+                }
+
+                macInput.addEventListener('input', updateMacPreview);
+                updateMacPreview();
+
+                profileSelect.addEventListener('change', function() {
+                    nteFormState.profile = this.value;
+                    nteFormState.profileAutoDetected = false;
+                    updatePreview();
+                });
+
+            } else {
+                formTitle.textContent = '✅ НТЕ подключена';
+                formContent.innerHTML = `
+                    <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">Профиль:</label>
+                    <select id="nte-profile-select" class="nte-select">
+                        ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
+                    </select>
+                    <div class="nte-hint">ОЛТ автоматически определит тип НТЕ</div>
+                    <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-top: 10px;">
+                        <div style="font-size: 11px; color: #1976D2;">
+                            💡 НТЕ будет найдена по статусу unconfigured и настроена с выбранным профилем
+                        </div>
+                    </div>
+                `;
+
+                const profileSelect = document.getElementById('nte-profile-select');
+                profileSelect.addEventListener('change', function() {
+                    nteFormState.profile = this.value;
+                    updatePreview();
+                });
+            }
+
+            updatePreview();
+        }
+
+        statusRadios.forEach(radio => {
+            radio.addEventListener('change', updateForm);
+        });
+
+        updateForm();
+
+        function getCurrentFormData() {
+            const selectedStatus = document.querySelector('input[name="nte-status"]:checked').value;
+            const profileSelect = document.getElementById('nte-profile-select');
+            const selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
+            let macAddress = '';
+
+            if (selectedStatus === 'not_connected') {
+                const macInput = document.getElementById('nte-mac-input');
+                const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
+
+                if (rawMac.length !== 12) {
+                    showNotification('❌ Введите корректный MAC-адрес (12 символов)', 'error');
+                    return null;
+                }
+
+                macAddress = formatMAC(rawMac);
+            }
+
+            return { selectedStatus, selectedProfile, macAddress };
+        }
+
+        document.getElementById('nte-copy-config').addEventListener('click', function() {
+            const data = getCurrentFormData();
+            if (!data) return;
+
+            copyNTEConfig(data.selectedStatus, data.macAddress, data.selectedProfile);
+        });
+
+        document.getElementById('nte-back-to-main').addEventListener('click', backToMain);
+    }
+
+    function setupCopyButtons() {
+        document.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.onmouseover = () => {
+                btn.style.background = 'rgba(33, 150, 243, 0.1)';
+                btn.style.color = '#2196F3';
+            };
+            btn.onmouseout = () => {
+                btn.style.background = 'none';
+                btn.style.color = '#78909c';
+            };
+            btn.onclick = function(e) {
+                e.stopPropagation();
+                const text = this.getAttribute('data-copy');
+                if (text && text !== '—') {
+                    navigator.clipboard.writeText(text).then(() => {
+                        const originalIcon = this.innerHTML;
+                        this.innerHTML = '✓';
+                        this.style.color = '#4caf50';
+                        setTimeout(() => {
+                            this.innerHTML = originalIcon;
+                            this.style.color = '#78909c';
+                        }, 1000);
+                    });
+                }
+            };
+        });
+    }
+
+    function updateContent() {
+        const dataChanged = updateCollectedData();
+
+        const lteIcon = document.getElementById('lte-nav-icon');
+        if (lteIcon) {
+            if (collectedData.ip && LTE_IPS.includes(collectedData.ip)) {
+                lteIcon.style.display = 'block';
+            } else {
+                lteIcon.style.display = 'none';
+            }
+        }
+
+        if (!content) return;
+        if (content.style.display === 'none') return;
+
+        if (currentView === 'main') {
+            if (dataChanged) {
+                content.innerHTML = renderMainView();
+                setupCopyButtons();
             }
         }
     }
@@ -346,12 +999,25 @@ function openUserside() {
     function createWindow() {
         if (document.getElementById('timernet-container')) return;
 
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+
         const fontLink = document.createElement('link');
         fontLink.href = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap';
         fontLink.rel = 'stylesheet';
         document.head.appendChild(fontLink);
 
-        const container = document.createElement('div');
+        container = document.createElement('div');
         container.id = 'timernet-container';
         container.style.cssText = `
             position: fixed;
@@ -365,24 +1031,20 @@ function openUserside() {
             transition: opacity 0.3s ease;
         `;
 
-        container.onmouseenter = () => {
-            container.style.opacity = '1';
-        };
-        container.onmouseleave = () => {
-            container.style.opacity = '0.7';
-        };
+        container.onmouseenter = () => { container.style.opacity = '1'; };
+        container.onmouseleave = () => { container.style.opacity = '0.7'; };
 
         const iconsWrapper = document.createElement('div');
         iconsWrapper.style.cssText = `
             position: relative;
-            width: 156px;
+            width: 208px;
             height: 32px;
             margin-bottom: -2px;
             align-self: flex-start;
             margin-left: 10px;
         `;
 
-        // ========== ИКОНКА USERSIDE (ПЕРВАЯ - слева) ==========
+        // USERSIDE ICON
         const usersideIcon = document.createElement('div');
         usersideIcon.id = 'userside-nav-icon';
         usersideIcon.style.cssText = `
@@ -461,7 +1123,7 @@ function openUserside() {
 
         usersideIcon.onclick = openUserside;
 
-        // ========== ИКОНКА РАКЕТА (ВТОРАЯ) ==========
+        // EXTENSION ICON
         const extensionIcon = document.createElement('div');
         extensionIcon.id = 'extension-nav-icon';
         extensionIcon.style.cssText = `
@@ -544,7 +1206,7 @@ function openUserside() {
 
         extensionIcon.onclick = launchExtension;
 
-        // ========== ИКОНКА LTE (ТРЕТЬЯ) ==========
+        // LTE ICON
         const lteIcon = document.createElement('div');
         lteIcon.id = 'lte-nav-icon';
         lteIcon.style.cssText = `
@@ -628,18 +1290,98 @@ function openUserside() {
 
         lteIcon.onclick = openLteDevice;
 
-        // Добавляем иконки в правильном порядке:
-        // 1. USERSIDE (слева)
-        // 2. Ракета (посередине)
-        // 3. LTE (справа)
-        iconsWrapper.appendChild(usersideIcon);  // 🔍 - ПЕРВАЯ
-        iconsWrapper.appendChild(extensionIcon); // 🚀 - ВТОРАЯ
-        iconsWrapper.appendChild(lteIcon);       // 📡 - ТРЕТЬЯ
+        // NTE ICON
+        nteIcon = document.createElement('div');
+        nteIcon.id = 'nte-nav-icon';
+        nteIcon.style.cssText = `
+            position: absolute;
+            left: 156px;
+            bottom: 0;
+            width: 42px;
+            height: 12px;
+            background: linear-gradient(135deg, #FF9800, #F57C00);
+            border: none;
+            border-radius: 12px 12px 0px 0px;
+            box-shadow: 0 -2px 8px rgba(255, 152, 0, 0.3);
+            cursor: pointer;
+            overflow: hidden;
+            transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+            pointer-events: auto;
+            z-index: 999999;
+        `;
 
-        const window = document.createElement('div');
-        window.id = 'timernet-window';
-        window.style.cssText = `
-            width: 250px;
+        const nteText = document.createElement('span');
+        nteText.textContent = 'NTE';
+        nteText.style.cssText = `
+            color: white;
+            font-family: 'Orbitron', Arial, sans-serif;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 2;
+            white-space: nowrap;
+        `;
+
+        nteIcon.appendChild(nteText);
+
+        const nteTooltip = document.createElement('div');
+        nteTooltip.textContent = 'Настройка НТЕ';
+        nteTooltip.style.cssText = `
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            font-family: 'Orbitron', Arial, sans-serif;
+            z-index: 1000000;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 8px;
+        `;
+
+        nteIcon.appendChild(nteTooltip);
+
+        nteIcon.onmouseover = () => {
+            nteIcon.style.height = '32px';
+            nteIcon.style.background = 'linear-gradient(135deg, #F57C00, #E65100)';
+            nteText.style.bottom = '12px';
+            nteTooltip.style.opacity = '1';
+        };
+
+        nteIcon.onmouseout = () => {
+            nteIcon.style.height = '12px';
+            nteIcon.style.background = 'linear-gradient(135deg, #FF9800, #F57C00)';
+            nteText.style.bottom = '-2px';
+            nteTooltip.style.opacity = '0';
+        };
+
+        nteIcon.onclick = openNTEWizard;
+
+        iconsWrapper.appendChild(usersideIcon);
+        iconsWrapper.appendChild(extensionIcon);
+        iconsWrapper.appendChild(lteIcon);
+        iconsWrapper.appendChild(nteIcon);
+
+        const windowDiv = document.createElement('div');
+        windowDiv.id = 'timernet-window';
+        windowDiv.style.cssText = `
+            width: 300px;
             background: white;
             border-radius: 12px;
             padding: 0;
@@ -663,6 +1405,7 @@ function openUserside() {
         `;
 
         const titleSpan = document.createElement('span');
+        titleSpan.className = 'header-title';
         titleSpan.innerHTML = 'BILLING UP';
         titleSpan.style.cssText = `
             font-family: 'Orbitron', sans-serif;
@@ -680,7 +1423,7 @@ function openUserside() {
             align-items: center;
         `;
 
-        const toggleBtn = document.createElement('button');
+        toggleBtn = document.createElement('button');
         toggleBtn.id = 'toggle-btn';
         toggleBtn.innerHTML = '□';
         toggleBtn.style.cssText = `
@@ -710,7 +1453,7 @@ function openUserside() {
         };
         toggleBtn.title = 'Развернуть';
 
-        const closeBtn = document.createElement('button');
+        closeBtn = document.createElement('button');
         closeBtn.id = 'close-btn';
         closeBtn.innerHTML = '×';
         closeBtn.style.cssText = `
@@ -744,88 +1487,25 @@ function openUserside() {
         header.appendChild(titleSpan);
         header.appendChild(headerButtons);
 
-        const content = document.createElement('div');
+        content = document.createElement('div');
         content.id = 'data-content';
         content.style.cssText = `
             padding: 14px;
             transition: all 0.3s ease;
             display: none;
             background: white;
+            max-height: 500px;
+            overflow-y: auto;
         `;
 
-        window.appendChild(header);
-        window.appendChild(content);
+        windowDiv.appendChild(header);
+        windowDiv.appendChild(content);
 
         container.appendChild(iconsWrapper);
-        container.appendChild(window);
+        container.appendChild(windowDiv);
         document.body.appendChild(container);
 
         let isCollapsed = true;
-
-        function updateContent() {
-            updateCollectedData();
-
-            if (collectedData.ip && LTE_IPS.includes(collectedData.ip)) {
-                lteIcon.style.display = 'block';
-            } else {
-                lteIcon.style.display = 'none';
-            }
-
-            content.innerHTML = `
-                <div style="margin-bottom: 12px; background: #e8f0fe; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="color: #1976D2; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">DESC</span>
-                        <button class="copy-btn" data-copy="${collectedData.combined || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
-                    </div>
-                    <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #1a237e; line-height: 1.4; font-weight: 500;">${collectedData.combined || '—'}</div>
-                </div>
-
-                <div style="margin-bottom: 12px; background: #fce4ec; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="color: #c2185b; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">IP АДРЕС</span>
-                        <button class="copy-btn" data-copy="${collectedData.ip || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
-                    </div>
-                    <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.4; font-weight: 500;">
-                        ${collectedData.ip || '—'}
-                        ${collectedData.cdataNumber ? `<span style="color: #666; font-size: 11px; margin-left: 5px;">(CDATA-${collectedData.cdataNumber})</span>` : ''}
-                    </div>
-                </div>
-
-                <div style="margin-bottom: 0; background: #f5f5f5; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="color: #616161; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">VLAN</span>
-                        <button class="copy-btn" data-copy="${collectedData.vlan || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
-                    </div>
-                    <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.4; font-weight: 500;">${collectedData.vlan || '—'}</div>
-                </div>
-            `;
-
-            document.querySelectorAll('.copy-btn').forEach(btn => {
-                btn.onmouseover = () => {
-                    btn.style.background = 'rgba(33, 150, 243, 0.1)';
-                    btn.style.color = '#2196F3';
-                };
-                btn.onmouseout = () => {
-                    btn.style.background = 'none';
-                    btn.style.color = '#78909c';
-                };
-                btn.onclick = function(e) {
-                    e.stopPropagation();
-                    const text = this.getAttribute('data-copy');
-                    if (text && text !== '—') {
-                        navigator.clipboard.writeText(text).then(() => {
-                            const originalIcon = this.innerHTML;
-                            this.innerHTML = '✓';
-                            this.style.color = '#4caf50';
-                            setTimeout(() => {
-                                this.innerHTML = originalIcon;
-                                this.style.color = '#78909c';
-                            }, 1000);
-                        });
-                    }
-                };
-            });
-        }
 
         toggleBtn.onclick = function(e) {
             e.stopPropagation();
@@ -833,6 +1513,7 @@ function openUserside() {
                 content.style.display = 'block';
                 toggleBtn.innerHTML = '−';
                 toggleBtn.title = 'Свернуть';
+                updateContent();
             } else {
                 content.style.display = 'none';
                 toggleBtn.innerHTML = '□';
@@ -871,7 +1552,7 @@ function openUserside() {
             header.style.cursor = 'move';
         };
 
-        updateContent();
+        updateCollectedData();
         setInterval(updateContent, 2000);
     }
 
