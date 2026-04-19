@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      9.0
+// @version      9.1
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       You
 // @match        https://billing.timernet.ru/*
@@ -541,32 +541,37 @@ Desc: ${desc || '—'}`;
     }
 
     function renderMainView() {
+        const combined = collectedData.combined || '—';
+        const ip = collectedData.ip || '—';
+        const cdataNumber = collectedData.cdataNumber || '';
+        const vlan = collectedData.vlan || '—';
+
         return `
             <div style="margin-bottom: 12px; background: #e8f0fe; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                     <span style="color: #1976D2; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">DESC</span>
-                    <button class="copy-btn" data-copy="${collectedData.combined || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                    <button class="copy-btn" data-copy="${combined !== '—' ? combined : ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
                 </div>
-                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #1a237e; line-height: 1.4; font-weight: 500;">${collectedData.combined || '—'}</div>
+                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #1a237e; line-height: 1.4; font-weight: 500;">${combined}</div>
             </div>
 
             <div style="margin-bottom: 12px; background: #fce4ec; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                     <span style="color: #c2185b; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">IP АДРЕС</span>
-                    <button class="copy-btn" data-copy="${collectedData.ip || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                    <button class="copy-btn" data-copy="${ip !== '—' ? ip : ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
                 </div>
                 <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.4; font-weight: 500;">
-                    ${collectedData.ip || '—'}
-                    ${collectedData.cdataNumber ? `<span style="color: #666; font-size: 11px; margin-left: 5px;">(CDATA-${collectedData.cdataNumber})</span>` : ''}
+                    ${ip}
+                    ${cdataNumber ? `<span style="color: #666; font-size: 11px; margin-left: 5px;">(CDATA-${cdataNumber})</span>` : ''}
                 </div>
             </div>
 
             <div style="margin-bottom: 0; background: #f5f5f5; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                     <span style="color: #616161; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">VLAN</span>
-                    <button class="copy-btn" data-copy="${collectedData.vlan || ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
+                    <button class="copy-btn" data-copy="${vlan !== '—' ? vlan : ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
                 </div>
-                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.4; font-weight: 500;">${collectedData.vlan || '—'}</div>
+                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.4; font-weight: 500;">${vlan}</div>
             </div>
         `;
     }
@@ -958,7 +963,7 @@ Desc: ${desc || '—'}`;
             btn.onclick = function(e) {
                 e.stopPropagation();
                 const text = this.getAttribute('data-copy');
-                if (text && text !== '—') {
+                if (text && text !== '—' && text !== '') {
                     navigator.clipboard.writeText(text).then(() => {
                         const originalIcon = this.innerHTML;
                         this.innerHTML = '✓';
@@ -1505,6 +1510,42 @@ Desc: ${desc || '—'}`;
         container.appendChild(windowDiv);
         document.body.appendChild(container);
 
+        // Инициализация данных при создании окна
+        const initData = () => {
+            const contract = getContractNumber();
+            const address = getAddress();
+            const { ip, cdataNumber } = getIpAndCdataNumber();
+            const vlan = getVlan();
+            let olt = getOlt();
+
+            if (!olt && ip) olt = ip;
+
+            collectedData = {
+                contract: contract || '',
+                address: address || '',
+                originalAddress: address || '',
+                ip: ip || '',
+                cdataNumber: cdataNumber || '',
+                vlan: vlan || '',
+                olt: olt || '',
+                combined: '',
+                descWithoutContract: ''
+            };
+
+            if (contract && address) {
+                const parts = extractAddressParts(address);
+                collectedData.combined = createCombinedParam(contract, address, parts);
+                collectedData.descWithoutContract = getDescWithoutContract();
+            }
+
+            lastContract = contract;
+            lastAddress = address;
+            lastDesc = collectedData.combined;
+            ipFoundForCurrentDesc = !!ip;
+        };
+
+        initData();
+
         let isCollapsed = true;
 
         toggleBtn.onclick = function(e) {
@@ -1513,7 +1554,18 @@ Desc: ${desc || '—'}`;
                 content.style.display = 'block';
                 toggleBtn.innerHTML = '−';
                 toggleBtn.title = 'Свернуть';
-                updateContent();
+
+                // Рендерим контент при первом открытии
+                if (currentView === 'main') {
+                    content.innerHTML = renderMainView();
+                    setupCopyButtons();
+                }
+
+                // Проверяем и показываем LTE иконку если нужно
+                const lteIcon = document.getElementById('lte-nav-icon');
+                if (lteIcon && collectedData.ip && LTE_IPS.includes(collectedData.ip)) {
+                    lteIcon.style.display = 'block';
+                }
             } else {
                 content.style.display = 'none';
                 toggleBtn.innerHTML = '□';
@@ -1552,7 +1604,6 @@ Desc: ${desc || '—'}`;
             header.style.cursor = 'move';
         };
 
-        updateCollectedData();
         setInterval(updateContent, 2000);
     }
 
