@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      9.1
+// @version      9.2
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
-// @author       You
+// @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
 // @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
 // @downloadURL  https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
@@ -66,6 +66,27 @@
         mac: '',
         profile: NTE_PROFILES[0],
         profileAutoDetected: false
+    };
+
+    // Добавить новое состояние для ONU
+    let onuFormState = {
+        sn: '',
+        profile: NTE_PROFILES[0],
+        status: 'not_connected',
+    };
+
+    // Текущий режим в NTE Wizard: 'nte' или 'onu'
+    let nteMode = 'nte';
+
+    // Массив CDATA IP адресов
+    const CDATA_IPS_MAP = {
+        '200': '172.18.0.200',
+        '201': '172.18.0.201',
+        '202': '172.18.0.202',
+        '203': '172.18.0.203',
+        '204': '172.18.0.204',
+        '205': '172.18.0.205',
+        '206': '172.18.0.206'
     };
 
     // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
@@ -276,37 +297,36 @@
     }
 
     function getDescWithoutContract() {
-        if (!collectedData.combined || !collectedData.contract) return '';
+        if (!collectedData.combined || !collectedData.contract) {
+            // Пробуем получить fresh данные
+            const contract = getContractNumber();
+            const address = getAddress();
+            if (contract && address) {
+                const parts = extractAddressParts(address);
+                const combined = createCombinedParam(contract, address, parts);
+                if (combined) {
+                    let desc = combined;
+                    const contractBase = contract.replace(/^ULS_?/i, '');
+                    desc = desc.replace(new RegExp(`^${contract}`), '');
+                    desc = desc.replace(new RegExp(`^ULS_?${contractBase}`), '');
+                    desc = desc.replace(new RegExp(`^ULS[-_]?`, 'i'), '');
+                    desc = desc.replace(/^_/, '');
+                    console.log('🔄 Fresh desc calculated:', desc);
+                    return desc;
+                }
+            }
+            return '';
+        }
+
         let desc = collectedData.combined;
         const contractBase = collectedData.contract.replace(/^ULS_?/i, '');
         desc = desc.replace(new RegExp(`^${collectedData.contract}`), '');
         desc = desc.replace(new RegExp(`^ULS_?${contractBase}`), '');
         desc = desc.replace(new RegExp(`^ULS[-_]?`, 'i'), '');
         desc = desc.replace(/^_/, '');
+
+        console.log('📝 Calculated desc:', desc, 'from combined:', collectedData.combined);
         return desc;
-    }
-
-    function formatMAC(mac) {
-        mac = mac.toUpperCase().replace(/[^0-9A-F]/g, '');
-        if (mac.length !== 12) return mac;
-        return mac.match(/.{2}/g).join(':');
-    }
-
-    function detectProfileByMAC(mac) {
-        const cleanMac = mac.toUpperCase().replace(/[^0-9A-F]/g, '');
-        const prefix = cleanMac.substring(0, 6);
-
-        if (prefix === '02005E') {
-            console.log('✅ Обнаружен MAC ICT (02:00:5E), профиль: NTE-2-VPU');
-            return 'NTE-2-VPU';
-        }
-
-        if (prefix === '02004B') {
-            console.log('✅ Обнаружен MAC ZTE (02:00:4B), профиль: NTE-RG-VPU');
-            return 'NTE-RG-VPU';
-        }
-
-        return null;
     }
 
     function saveDataForUserside() {
@@ -402,7 +422,7 @@ Desc: ${desc || '—'}`;
             top: 20px;
             right: 20px;
             padding: 12px 20px;
-            background: ${type === 'success' ? '#4CAF50' : '#F44336'};
+            background: ${type === 'success' ? '#4CAF50' : type === 'info' ? '#2196F3' : '#F44336'};
             color: white;
             border-radius: 8px;
             font-family: 'Orbitron', sans-serif;
@@ -434,8 +454,11 @@ Desc: ${desc || '—'}`;
 
         const contractChanged = newContract !== lastContract;
         const addressChanged = newAddress !== lastAddress;
+        let descChanged = false;
+        let dataUpdated = false;
 
         if (contractChanged || addressChanged) {
+            // ... существующий код обработки изменений ...
             collectedData.contract = newContract;
             collectedData.address = newAddress;
             collectedData.originalAddress = newAddress;
@@ -446,11 +469,22 @@ Desc: ${desc || '—'}`;
 
             if (newContract && newAddress) {
                 const parts = extractAddressParts(newAddress);
-                collectedData.combined = createCombinedParam(newContract, newAddress, parts);
+                const newCombined = createCombinedParam(newContract, newAddress, parts);
+
+                if (newCombined !== collectedData.combined && collectedData.combined !== '') {
+                    descChanged = true;
+                }
+
+                collectedData.combined = newCombined;
                 collectedData.descWithoutContract = getDescWithoutContract();
             } else {
+                if (collectedData.combined !== '') {
+                    descChanged = true;
+                }
                 collectedData.combined = '';
                 collectedData.descWithoutContract = '';
+                collectedData.vlan = '';
+                collectedData.olt = '';
             }
 
             lastContract = newContract;
@@ -458,15 +492,41 @@ Desc: ${desc || '—'}`;
             lastDesc = collectedData.combined;
             ipFoundForCurrentDesc = !!newIp;
 
-            return true;
-        } else {
-            collectedData.ip = newIp || collectedData.ip;
-            collectedData.cdataNumber = newCdataNumber || collectedData.cdataNumber;
-            collectedData.vlan = newVlan || collectedData.vlan;
+            if (descChanged) {
+                resetNTEMacIfNeeded();
+            }
 
-            if (newOlt) {
-                collectedData.olt = newOlt;
-            } else if (!collectedData.olt && collectedData.ip) {
+            dataUpdated = true;
+        } else {
+            const oltUpdated = (newOlt && newOlt !== collectedData.olt);
+            const vlanUpdated = (newVlan && newVlan !== collectedData.vlan);
+            const ipUpdated = (newIp && newIp !== collectedData.ip);
+
+            if (newIp) collectedData.ip = newIp;
+            if (newCdataNumber) collectedData.cdataNumber = newCdataNumber;
+            if (newVlan) collectedData.vlan = newVlan;
+            if (newOlt) collectedData.olt = newOlt;
+
+            if (newAddress && newAddress !== collectedData.originalAddress) {
+                collectedData.originalAddress = newAddress;
+                collectedData.address = newAddress;
+
+                if (newContract && newAddress) {
+                    const parts = extractAddressParts(newAddress);
+                    const newCombined = createCombinedParam(newContract, newAddress, parts);
+
+                    if (newCombined !== collectedData.combined && collectedData.combined !== '') {
+                        descChanged = true;
+                        collectedData.combined = newCombined;
+                        collectedData.descWithoutContract = getDescWithoutContract();
+                        lastDesc = newCombined;
+
+                        resetNTEMacIfNeeded();
+                    }
+                }
+            }
+
+            if (!collectedData.olt && collectedData.ip) {
                 collectedData.olt = collectedData.ip;
             }
 
@@ -474,10 +534,107 @@ Desc: ${desc || '—'}`;
 
             if (newIp && !ipFoundForCurrentDesc) {
                 ipFoundForCurrentDesc = true;
-                return true;
+                dataUpdated = true;
             }
 
-            return false;
+            if ((oltUpdated || vlanUpdated || ipUpdated) && currentView === 'nte-wizard') {
+                dataUpdated = true;
+                console.log('🔄 Данные OLT/VLAN обновились, проверяем фокус');
+            }
+        }
+
+        // Проверяем, не фокусируется ли пользователь на поле ввода
+        // Проверяем, не фокусируется ли пользователь на поле ввода
+        const isInputFocused = window.nteInputFocused ? window.nteInputFocused() : false;
+        const activeElement = document.activeElement;
+        const isSNFocused = window.isSNInputFocused ? window.isSNInputFocused() : false;
+        const isAnyInputFocused = isInputFocused || isSNFocused ||
+             (activeElement && (activeElement.id === 'onu-sn-input' || activeElement.id === 'nte-mac-input'));
+
+        // Если данные изменились и открыт NTE Wizard - обновляем его
+        // НО не обновляем если пользователь вводит данные
+        if (dataUpdated && currentView === 'nte-wizard' && content && content.style.display !== 'none' && !isAnyInputFocused) {
+            saveNTEFormState();
+            content.innerHTML = renderNTEView();
+            setupNTEEventListeners();
+            console.log('✅ NTE Wizard обновлен с новыми данными');
+        } else if (dataUpdated && currentView === 'nte-wizard' && isAnyInputFocused) {
+            console.log('⏸️ Пользователь вводит данные, откладываем обновление');
+        }
+        if (isAnyInputFocused) {
+            console.log('⏸️ Пользователь вводит данные, обновление отложено');
+            dataUpdated = false;
+        }
+
+        return dataUpdated;
+    }
+
+    function getCdataIp() {
+        // Пытаемся найти CDATA номер из данных
+        const cdataNumber = collectedData.cdataNumber;
+        if (cdataNumber && CDATA_IPS_MAP[cdataNumber]) {
+            console.log('✅ Найден CDATA IP:', CDATA_IPS_MAP[cdataNumber], 'для CDATA-', cdataNumber);
+            return CDATA_IPS_MAP[cdataNumber];
+        }
+
+        // Если не нашли, пробуем получить из IP адреса
+        const { ip, cdataNumber: freshCdata } = getIpAndCdataNumber();
+        if (freshCdata && CDATA_IPS_MAP[freshCdata]) {
+            console.log('✅ Найден CDATA IP из fresh данных:', CDATA_IPS_MAP[freshCdata]);
+            return CDATA_IPS_MAP[freshCdata];
+        }
+
+        console.log('⚠️ CDATA IP не найден');
+        return '';
+    }
+
+    function resetNTEMacIfNeeded() {
+        console.log('🔄 Полный сброс и обновление данных NTE/ONU');
+
+        const freshContract = getContractNumber();
+        const freshAddress = getAddress();
+        const { ip: freshIp, cdataNumber: freshCdataNumber } = getIpAndCdataNumber();
+        const freshVlan = getVlan();
+        let freshOlt = getOlt();
+
+        if (!freshOlt && freshIp) {
+            freshOlt = freshIp;
+        }
+
+        collectedData.contract = freshContract;
+        collectedData.address = freshAddress;
+        collectedData.originalAddress = freshAddress;
+        collectedData.ip = freshIp;
+        collectedData.cdataNumber = freshCdataNumber;
+        collectedData.vlan = freshVlan;
+        collectedData.olt = freshOlt;
+
+        if (freshContract && freshAddress) {
+            const parts = extractAddressParts(freshAddress);
+            collectedData.combined = createCombinedParam(freshContract, freshAddress, parts);
+        } else {
+            collectedData.combined = '';
+        }
+        collectedData.descWithoutContract = getDescWithoutContract();
+
+        // Сбрасываем MAC и SN
+        nteFormState.mac = '';
+        nteFormState.profileAutoDetected = false;
+        onuFormState.sn = '';
+
+        console.log('📊 Полностью обновленные данные:', {
+            contract: collectedData.contract,
+            combined: collectedData.combined,
+            desc: collectedData.descWithoutContract,
+            olt: collectedData.olt,
+            vlan: collectedData.vlan,
+            ip: collectedData.ip
+        });
+
+        if (currentView === 'nte-wizard' && content) {
+            content.innerHTML = renderNTEView();
+            setupNTEEventListeners();
+            showNotification('🔄 DESC изменился, данные обновлены', 'info');
         }
     }
 
@@ -486,13 +643,38 @@ Desc: ${desc || '—'}`;
     function openNTEWizard() {
         console.log('🔄 Открываем NTE Wizard');
         currentView = 'nte-wizard';
+        nteMode = 'nte'; // Всегда начинаем с режима NTE
 
-        if (!collectedData.olt) {
-            collectedData.olt = getOlt();
-            if (!collectedData.olt && collectedData.ip) {
-                collectedData.olt = collectedData.ip;
-            }
+        const freshContract = getContractNumber();
+        const freshAddress = getAddress();
+        const { ip: freshIp, cdataNumber: freshCdata } = getIpAndCdataNumber();
+        const freshVlan = getVlan();
+        let freshOlt = getOlt();
+
+        if (!freshOlt && freshIp) {
+            freshOlt = freshIp;
         }
+
+        collectedData.contract = freshContract;
+        collectedData.address = freshAddress;
+        collectedData.originalAddress = freshAddress;
+        collectedData.ip = freshIp;
+        collectedData.cdataNumber = freshCdata;
+        collectedData.vlan = freshVlan;
+        collectedData.olt = freshOlt;
+
+        if (freshContract && freshAddress) {
+            const parts = extractAddressParts(freshAddress);
+            collectedData.combined = createCombinedParam(freshContract, freshAddress, parts);
+        }
+        collectedData.descWithoutContract = getDescWithoutContract();
+
+        console.log('📊 Данные при открытии NTE Wizard:', {
+            desc: collectedData.descWithoutContract,
+            olt: collectedData.olt,
+            vlan: collectedData.vlan,
+            combined: collectedData.combined
+        });
 
         nteFormState.profileAutoDetected = false;
 
@@ -503,9 +685,11 @@ Desc: ${desc || '—'}`;
 
         const titleSpan = document.querySelector('#timernet-window .header-title');
         if (titleSpan) {
-            titleSpan.textContent = 'НАСТРОЙКА НТЕ';
+            titleSpan.textContent = 'НАСТРОЙКА NTE/ONU';
         }
     }
+
+
 
     function backToMain() {
         console.log('🔄 Возвращаемся на главную');
@@ -577,10 +761,48 @@ Desc: ${desc || '—'}`;
     }
 
     function renderNTEView() {
-        const desc = collectedData.descWithoutContract || getDescWithoutContract();
-        const savedStatus = nteFormState.status;
+        // Принудительно получаем свежие данные перед рендером
+        const freshVlan = getVlan();
+        const freshOlt = getOlt();
+        const freshIp = getIpAndCdataNumber();
+
+        // Обновляем collectedData если нашли свежие данные
+        if (freshVlan) collectedData.vlan = freshVlan;
+        if (freshOlt) collectedData.olt = freshOlt;
+        if (freshIp.ip) collectedData.ip = freshIp.ip;
+        if (freshIp.cdataNumber) collectedData.cdataNumber = freshIp.cdataNumber;
+        if (!collectedData.olt && collectedData.ip) collectedData.olt = collectedData.ip;
+
+        // Получаем CDATA IP
+        const cdataIp = getCdataIp();
+
+        // Данные для отображения в зависимости от режима
+        let displayOlt, displayDesc;
+
+        if (nteMode === 'onu') {
+            // Для ONU: показываем CDATA IP и полный DESC
+            displayOlt = cdataIp || '❌ НЕ НАЙДЕН';
+            displayDesc = collectedData.combined || getDescWithoutContract() || '—';
+        } else {
+            // Для NTE: показываем обычный OLT и DESC без договора
+            displayOlt = collectedData.olt || '❌ НЕ НАЙДЕН';
+            displayDesc = getDescWithoutContract() || '—';
+        }
+
+        const currentVlan = collectedData.vlan || '';
+
+        console.log('📊 Рендер NTE/ONU View:', {
+            mode: nteMode,
+            desc: displayDesc,
+            olt: displayOlt,
+            vlan: currentVlan,
+            cdataIp: cdataIp
+        });
+
+        const savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
         const savedMac = nteFormState.mac;
         const savedProfile = nteFormState.profile;
+        const savedSN = onuFormState.sn;
 
         return `
             <style>
@@ -617,6 +839,38 @@ Desc: ${desc || '—'}`;
                     color: #333;
                     font-weight: 600;
                     font-family: 'SF Mono', monospace;
+                    word-break: break-all;
+                    text-align: right;
+                    max-width: 60%;
+                }
+                .mode-switch {
+                    display: flex;
+                    background: #e0e0e0;
+                    border-radius: 8px;
+                    padding: 3px;
+                    margin-bottom: 15px;
+                }
+                .mode-btn {
+                    flex: 1;
+                    padding: 8px;
+                    border: none;
+                    background: transparent;
+                    cursor: pointer;
+                    font-family: 'Orbitron', sans-serif;
+                    font-size: 11px;
+                    font-weight: 600;
+                    color: #666;
+                    border-radius: 6px;
+                    transition: all 0.2s;
+                    letter-spacing: 0.5px;
+                }
+                .mode-btn.active {
+                    background: white;
+                    color: #FF9800;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .mode-btn:hover:not(.active) {
+                    background: rgba(255,255,255,0.5);
                 }
                 .nte-radio-group {
                     display: flex;
@@ -728,24 +982,30 @@ Desc: ${desc || '—'}`;
             </style>
 
             <div class="nte-wizard">
+                <!-- Переключатель NTE / ONU -->
+                <div class="mode-switch">
+                    <button class="mode-btn ${nteMode === 'nte' ? 'active' : ''}" id="mode-nte-btn">NTE</button>
+                    <button class="mode-btn ${nteMode === 'onu' ? 'active' : ''}" id="mode-onu-btn">ONU</button>
+                </div>
+
                 <div class="nte-section">
                     <div class="nte-section-title">📊 Данные из биллинга</div>
                     <div class="nte-data-row">
-                        <span class="nte-label">DESC (без договора):</span>
-                        <span class="nte-value">${desc || '—'}</span>
+                        <span class="nte-label">DESC${nteMode === 'onu' ? ' (полный)' : ' (без договора)'}:</span>
+                        <span class="nte-value">${displayDesc}</span>
                     </div>
                     <div class="nte-data-row">
-                        <span class="nte-label">OLT:</span>
-                        <span class="nte-value" style="${collectedData.olt ? 'color: #4CAF50;' : 'color: #f44336;'}">${collectedData.olt || '❌ НЕ НАЙДЕН'}</span>
+                        <span class="nte-label">${nteMode === 'onu' ? 'CDATA IP' : 'OLT'}:</span>
+                        <span class="nte-value" style="${displayOlt !== '❌ НЕ НАЙДЕН' ? 'color: #4CAF50;' : 'color: #f44336;'}">${displayOlt}</span>
                     </div>
                     <div class="nte-data-row">
                         <span class="nte-label">VLAN:</span>
-                        <span class="nte-value" style="${collectedData.vlan ? 'color: #4CAF50;' : 'color: #f44336;'}">${collectedData.vlan || '❌ НЕ НАЙДЕН'}</span>
+                        <span class="nte-value" style="${currentVlan ? 'color: #4CAF50;' : 'color: #f44336;'}">${currentVlan || '❌ НЕ НАЙДЕН'}</span>
                     </div>
                 </div>
 
                 <div class="nte-section">
-                    <div class="nte-section-title">🔌 Статус НТЕ</div>
+                    <div class="nte-section-title">🔌 Статус ${nteMode === 'nte' ? 'НТЕ' : 'ONU'}</div>
                     <div class="nte-radio-group">
                         <label>
                             <input type="radio" name="nte-status" value="not_connected" ${savedStatus === 'not_connected' ? 'checked' : ''}>
@@ -757,15 +1017,16 @@ Desc: ${desc || '—'}`;
                         </label>
                     </div>
                 </div>
+                
 
                 <div id="nte-dynamic-form" class="nte-section">
-                    <div class="nte-section-title" id="nte-form-title">${savedStatus === 'not_connected' ? '➕ Новая НТЕ' : '✅ НТЕ подключена'}</div>
+                    <div class="nte-section-title" id="nte-form-title">${nteMode === 'nte' ? (savedStatus === 'not_connected' ? '➕ Новая НТЕ' : '✅ НТЕ подключена') : '🔧 Настройка ONU'}</div>
                     <div id="nte-form-content"></div>
                 </div>
 
-                ${!collectedData.olt || !collectedData.vlan ? `
+                ${(nteMode === 'nte' && (!collectedData.olt || !collectedData.vlan)) || (nteMode === 'onu' && (!cdataIp || !collectedData.vlan)) ? `
                     <div class="nte-warning">
-                        ⚠️ ${!collectedData.olt ? 'OLT не найден. ' : ''}${!collectedData.vlan ? 'VLAN не найден. ' : ''}
+                        ⚠️ ${nteMode === 'onu' && !cdataIp ? 'CDATA IP не найден. ' : ''}${nteMode === 'nte' && !collectedData.olt ? 'OLT не найден. ' : ''}${!collectedData.vlan ? 'VLAN не найден. ' : ''}
                     </div>
                 ` : ''}
 
@@ -776,6 +1037,52 @@ Desc: ${desc || '—'}`;
             </div>
         `;
     }
+    // Добавить новую функцию конвертации раскладки
+    function convertRussianToEnglish(text) {
+        const russianToEnglishMap = {
+            'а': 'f', 'А': 'F',
+            'б': ',', 'Б': '<',
+            'в': 'd', 'В': 'D',
+            'г': 'u', 'Г': 'U',
+            'д': 'l', 'Д': 'L',
+            'е': 't', 'Е': 'T',
+            'ё': '`', 'Ё': '~',
+            'ж': ';', 'Ж': ':',
+            'з': 'p', 'З': 'P',
+            'и': 'b', 'И': 'B',
+            'й': 'q', 'Й': 'Q',
+            'к': 'r', 'К': 'R',
+            'л': 'k', 'Л': 'K',
+            'м': 'v', 'М': 'V',
+            'н': 'y', 'Н': 'Y',
+            'о': 'j', 'О': 'J',
+            'п': 'g', 'П': 'G',
+            'р': 'h', 'Р': 'H',
+            'с': 'c', 'С': 'C',
+            'т': 'n', 'Т': 'N',
+            'у': 'e', 'У': 'E',
+            'ф': 'a', 'Ф': 'A',
+            'х': '[', 'Х': '{',
+            'ц': 'w', 'Ц': 'W',
+            'ч': 'x', 'Ч': 'X',
+            'ш': 'i', 'Ш': 'I',
+            'щ': 'o', 'Щ': 'O',
+            'ъ': ']', 'Ъ': '}',
+            'ы': 's', 'Ы': 'S',
+            'ь': 'm', 'Ь': 'M',
+            'э': '\'', 'Э': '"',
+            'ю': '.', 'Ю': '>',
+            'я': 'z', 'Я': 'Z',
+            'А': 'F', 'Б': ',', 'В': 'D', 'Г': 'U', 'Д': 'L', 'Е': 'T',
+            'Ж': ';', 'З': 'P', 'И': 'B', 'Й': 'Q', 'К': 'R', 'Л': 'K',
+            'М': 'V', 'Н': 'Y', 'О': 'J', 'П': 'G', 'Р': 'H', 'С': 'C',
+            'Т': 'N', 'У': 'E', 'Ф': 'A', 'Х': '[', 'Ц': 'W', 'Ч': 'X',
+            'Ш': 'I', 'Щ': 'O', 'Ъ': ']', 'Ы': 'S', 'Ь': 'M', 'Э': '\'',
+            'Ю': '.', 'Я': 'Z'
+        };
+
+        return text.split('').map(char => russianToEnglishMap[char] || char).join('');
+    }
 
     function setupNTEEventListeners() {
         const statusRadios = document.querySelectorAll('input[name="nte-status"]');
@@ -783,171 +1090,414 @@ Desc: ${desc || '—'}`;
         const formContent = document.getElementById('nte-form-content');
         const previewBox = document.getElementById('nte-preview');
 
-        function updatePreview() {
-            const selectedStatus = document.querySelector('input[name="nte-status"]:checked').value;
-            const profileSelect = document.getElementById('nte-profile-select');
-            const selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
-            const desc = collectedData.descWithoutContract || getDescWithoutContract();
-            const vlan = collectedData.vlan;
-            const olt = collectedData.olt;
+        // Флаг для отслеживания фокуса на поле ввода
+        let isInputFocused = false;
+        let isSNFocused = false;
+        // Обработчики для переключателя режимов
+        const modeNteBtn = document.getElementById('mode-nte-btn');
+        const modeOnuBtn = document.getElementById('mode-onu-btn');
 
-            let macAddress = '';
-            if (selectedStatus === 'not_connected') {
-                const macInput = document.getElementById('nte-mac-input');
-                if (macInput) {
-                    const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
-                    if (rawMac.length === 12) {
-                        macAddress = formatMAC(rawMac);
-                    } else if (macInput.value) {
-                        macAddress = macInput.value;
+        if (modeNteBtn) {
+            modeNteBtn.addEventListener('click', function() {
+                if (nteMode !== 'nte') {
+                    nteMode = 'nte';
+                    saveCurrentFormState();
+                    content.innerHTML = renderNTEView();
+                    setupNTEEventListeners();
+                }
+            });
+        }
+
+        if (modeOnuBtn) {
+            modeOnuBtn.addEventListener('click', function() {
+                if (nteMode !== 'onu') {
+                    nteMode = 'onu';
+                    saveCurrentFormState();
+                    content.innerHTML = renderNTEView();
+                    setupNTEEventListeners();
+                }
+            });
+        }
+
+        function saveCurrentFormState() {
+            if (nteMode === 'nte') {
+                saveNTEFormState();
+            } else {
+                saveONUFormState();
+            }
+        }
+
+        function saveONUFormState() {
+            const snInput = document.getElementById('onu-sn-input');
+            if (snInput) {
+                onuFormState.sn = snInput.value;
+            }
+            const statusRadio = document.querySelector('input[name="nte-status"]:checked');
+            if (statusRadio) {
+                onuFormState.status = statusRadio.value;
+            }
+        }
+
+        function updatePreview() {
+            let desc, olt, vlan;
+
+            if (nteMode === 'onu') {
+                desc = collectedData.combined || getDescWithoutContract() || '—';
+                olt = getCdataIp() || '—';
+                vlan = getVlan() || collectedData.vlan || '—';
+
+                if (getVlan()) collectedData.vlan = getVlan();
+                const cdataIp = getCdataIp();
+                if (cdataIp) collectedData.olt = cdataIp;
+            } else {
+                desc = getDescWithoutContract() || '—';
+                vlan = getVlan() || collectedData.vlan || '—';
+                olt = getOlt() || collectedData.olt || collectedData.ip || '—';
+
+                if (getVlan()) collectedData.vlan = getVlan();
+                if (getOlt()) collectedData.olt = getOlt();
+            }
+
+            let selectedProfile = '';
+            if (nteMode === 'nte') {
+                const profileSelect = document.getElementById('nte-profile-select');
+                selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
+            }
+
+            let identifier = '';
+
+            if (nteMode === 'onu') {
+                const snInput = document.getElementById('onu-sn-input');
+                if (snInput && snInput.value) {
+                    identifier = snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '');
+                }
+            } else {
+                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+                if (selectedStatus === 'not_connected') {
+                    const macInput = document.getElementById('nte-mac-input');
+                    if (macInput) {
+                        const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
+                        if (rawMac.length === 12) {
+                            identifier = formatMAC(rawMac);
+                        } else if (macInput.value) {
+                            identifier = macInput.value;
+                        }
                     }
                 }
             }
 
-            const formattedMac = macAddress || '—';
-
             previewBox.style.display = 'block';
-            previewBox.innerHTML = `<strong>Предпросмотр:</strong>
-MAC: ${formattedMac}
+
+            if (nteMode === 'onu') {
+                previewBox.innerHTML = `<strong>Предпросмотр (ONU):</strong>
+SN: ${identifier || '—'}
+CDATA IP: ${olt}
+Vlan: ${vlan}
+Desc: ${desc}`;
+            } else {
+                previewBox.innerHTML = `<strong>Предпросмотр (NTE):</strong>
+MAC: ${identifier || '—'}
 Profile: ${selectedProfile}
-OLT: ${olt || '—'}
-Vlan: ${vlan || '—'}
-Desc: ${desc || '—'}`;
+OLT: ${olt}
+Vlan: ${vlan}
+Desc: ${desc}`;
+            }
         }
 
-        function updateForm() {
-            const selectedStatus = document.querySelector('input[name="nte-status"]:checked').value;
-            nteFormState.status = selectedStatus;
+                function updateForm() {
+            if (nteMode === 'onu') {
+                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+                onuFormState.status = selectedStatus;
 
-            if (selectedStatus === 'not_connected') {
-                formTitle.textContent = '➕ Новая НТЕ';
-                formContent.innerHTML = `
-                    <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">MAC-адрес:</label>
-                    <input type="text" id="nte-mac-input" class="nte-input" placeholder="02005E09DCF8 или 02:00:5E:09:DC:F8" maxlength="17" value="${nteFormState.mac}">
-                    <div id="nte-mac-preview" class="nte-mac-preview"></div>
-                    <div id="nte-profile-hint" class="nte-profile-auto"></div>
+                if (selectedStatus === 'not_connected') {
+                    formTitle.textContent = '➕ Новая ONU';
+                    formContent.innerHTML = `
+                        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">SN (серийный номер):</label>
+                        <input type="text" id="onu-sn-input" class="nte-input" placeholder="HWTCAF6DEECC" maxlength="12" value="${onuFormState.sn}">
+                        <div id="onu-sn-preview" class="nte-mac-preview"></div>
+                        <div class="nte-hint">Введите серийный номер ONU (12 символов)</div>
+                    `;
 
-                    <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px; margin-top: 10px;">Профиль:</label>
-                    <select id="nte-profile-select" class="nte-select">
-                        ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
-                    </select>
-                    <div class="nte-hint">Выберите профиль для данного типа НТЕ</div>
-                `;
+                    const snInput = document.getElementById('onu-sn-input');
+                    const snPreview = document.getElementById('onu-sn-preview');
 
-                const macInput = document.getElementById('nte-mac-input');
-                const macPreview = document.getElementById('nte-mac-preview');
-                const profileHint = document.getElementById('nte-profile-hint');
-                const profileSelect = document.getElementById('nte-profile-select');
+                    snInput.addEventListener('focus', () => {
+                        isSNFocused = true;
+                    });
+                    snInput.addEventListener('blur', () => {
+                        setTimeout(() => { isSNFocused = false; }, 200);
+                    });
 
-                function updateMacPreview() {
-                    let mac = macInput.value.toUpperCase();
-                    const rawMac = mac.replace(/[^0-9A-F]/g, '');
-
-                    if (rawMac.length >= 2) {
-                        const formatted = rawMac.match(/.{1,2}/g).join(':');
-                        macPreview.textContent = `Формат: ${formatted}`;
-                    } else {
-                        macPreview.textContent = rawMac ? 'Введите MAC' : '';
-                    }
-
-                    if (rawMac.length === 12) {
-                        macPreview.style.color = '#4CAF50';
-                        macPreview.textContent = `✅ MAC: ${formatMAC(rawMac)}`;
-
-                        if (!nteFormState.profileAutoDetected) {
-                            const detectedProfile = detectProfileByMAC(mac);
-                            if (detectedProfile) {
-                                profileSelect.value = detectedProfile;
-                                nteFormState.profile = detectedProfile;
-                                nteFormState.profileAutoDetected = true;
-
-                                let profileName = detectedProfile === 'NTE-2-VPU' ? 'NTE-2 (ICT)' : 'NTE-RG (ZTE)';
-                                profileHint.textContent = `🔍 Автоматически определен профиль: ${profileName}`;
-                                profileHint.style.cssText = 'background: #e8f5e9; color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
-                            } else {
-                                profileHint.textContent = '⚠️ MAC не распознан, выберите профиль вручную';
-                                profileHint.style.cssText = 'background: #fff3e0; color: #e65100; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
-                            }
+                    function updateSNPreview() {
+                        let sn = snInput.value;
+                        const convertedSN = convertRussianToEnglish(sn);
+                        if (convertedSN !== sn) {
+                            snInput.value = convertedSN;
+                            sn = convertedSN;
                         }
-                    } else if (rawMac.length > 0) {
-                        macPreview.style.color = '#FF9800';
-                        profileHint.textContent = '';
-                        nteFormState.profileAutoDetected = false;
+                        sn = sn.toUpperCase();
+                        if (sn !== snInput.value) {
+                            snInput.value = sn;
+                        }
+                        const cleanSN = sn.replace(/[^0-9A-Z]/g, '');
+                        if (cleanSN.length > 0) {
+                            snPreview.textContent = cleanSN;
+                            if (cleanSN.length === 12) {
+                                snPreview.style.color = '#4CAF50';
+                                snPreview.textContent = `✅ SN: ${cleanSN}`;
+                            } else {
+                                snPreview.style.color = '#FF9800';
+                            }
+                        } else {
+                            snPreview.textContent = '';
+                        }
+                        onuFormState.sn = snInput.value;
+                        updatePreview();
                     }
 
-                    nteFormState.mac = macInput.value;
-                    updatePreview();
-                }
-
-                macInput.addEventListener('input', updateMacPreview);
-                updateMacPreview();
-
-                profileSelect.addEventListener('change', function() {
-                    nteFormState.profile = this.value;
-                    nteFormState.profileAutoDetected = false;
-                    updatePreview();
-                });
-
-            } else {
-                formTitle.textContent = '✅ НТЕ подключена';
-                formContent.innerHTML = `
-                    <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">Профиль:</label>
-                    <select id="nte-profile-select" class="nte-select">
-                        ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
-                    </select>
-                    <div class="nte-hint">ОЛТ автоматически определит тип НТЕ</div>
-                    <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-top: 10px;">
-                        <div style="font-size: 11px; color: #1976D2;">
-                            💡 НТЕ будет найдена по статусу unconfigured и настроена с выбранным профилем
+                    snInput.addEventListener('input', updateSNPreview);
+                    snInput.addEventListener('paste', (e) => {
+                        setTimeout(updateSNPreview, 50);
+                    });
+                    updateSNPreview();
+                } else {
+                    formTitle.textContent = '✅ ONU подключена';
+                    formContent.innerHTML = `
+                        <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-top: 10px;">
+                            <div style="font-size: 11px; color: #1976D2;">
+                                💡 ONU будет найдена по статусу unconfigured и настроена автоматически
+                            </div>
                         </div>
-                    </div>
-                `;
+                    `;
+                }
+            } else {
+                // Режим NTE
+                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+                nteFormState.status = selectedStatus;
 
-                const profileSelect = document.getElementById('nte-profile-select');
-                profileSelect.addEventListener('change', function() {
-                    nteFormState.profile = this.value;
-                    updatePreview();
-                });
+                if (selectedStatus === 'not_connected') {
+                    formTitle.textContent = '➕ Новая НТЕ';
+                    formContent.innerHTML = `
+                        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">MAC-адрес:</label>
+                        <input type="text" id="nte-mac-input" class="nte-input" placeholder="02005E09DCF8 или 02:00:5E:09:DC:F8" maxlength="17" value="${nteFormState.mac}">
+                        <div id="nte-mac-preview" class="nte-mac-preview"></div>
+                        <div id="nte-profile-hint" class="nte-profile-auto"></div>
+
+                        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px; margin-top: 10px;">Профиль:</label>
+                        <select id="nte-profile-select" class="nte-select">
+                            ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
+                        </select>
+                        <div class="nte-hint">Выберите профиль для данного типа НТЕ</div>
+                    `;
+
+                    const macInput = document.getElementById('nte-mac-input');
+                    const macPreview = document.getElementById('nte-mac-preview');
+                    const profileHint = document.getElementById('nte-profile-hint');
+                    const profileSelect = document.getElementById('nte-profile-select');
+
+                    macInput.addEventListener('focus', () => { isInputFocused = true; });
+                    macInput.addEventListener('blur', () => {
+                        setTimeout(() => { isInputFocused = false; }, 200);
+                    });
+
+                    function updateMacPreview() {
+                        let mac = macInput.value;
+                        const convertedMac = convertRussianToEnglish(mac);
+                        if (convertedMac !== mac) {
+                            macInput.value = convertedMac;
+                            mac = convertedMac;
+                        }
+                        mac = mac.toUpperCase();
+                        if (mac !== macInput.value) {
+                            macInput.value = mac;
+                        }
+                        const rawMac = mac.replace(/[^0-9A-F]/g, '');
+                        if (rawMac.length >= 2) {
+                            const formatted = rawMac.match(/.{1,2}/g).join(':');
+                            macPreview.textContent = `Формат: ${formatted}`;
+                        } else {
+                            macPreview.textContent = rawMac ? 'Введите MAC' : '';
+                        }
+                        if (rawMac.length === 12) {
+                            macPreview.style.color = '#4CAF50';
+                            macPreview.textContent = `✅ MAC: ${formatMAC(rawMac)}`;
+                            if (!nteFormState.profileAutoDetected) {
+                                const detectedProfile = detectProfileByMAC(mac);
+                                if (detectedProfile) {
+                                    profileSelect.value = detectedProfile;
+                                    nteFormState.profile = detectedProfile;
+                                    nteFormState.profileAutoDetected = true;
+                                    let profileName = detectedProfile === 'NTE-2-VPU' ? 'NTE-2 (ICT)' : 'NTE-RG (ZTE)';
+                                    profileHint.textContent = `🔍 Автоматически определен профиль: ${profileName}`;
+                                    profileHint.style.cssText = 'background: #e8f5e9; color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
+                                } else {
+                                    profileHint.textContent = '⚠️ MAC не распознан, выберите профиль вручную';
+                                    profileHint.style.cssText = 'background: #fff3e0; color: #e65100; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
+                                }
+                            }
+                        } else if (rawMac.length > 0) {
+                            macPreview.style.color = '#FF9800';
+                            profileHint.textContent = '';
+                            nteFormState.profileAutoDetected = false;
+                        }
+                        nteFormState.mac = macInput.value;
+                        updatePreview();
+                    }
+
+                    macInput.addEventListener('input', updateMacPreview);
+                    macInput.addEventListener('paste', (e) => {
+                        setTimeout(updateMacPreview, 50);
+                    });
+                    updateMacPreview();
+
+                    profileSelect.addEventListener('change', function() {
+                        nteFormState.profile = this.value;
+                        nteFormState.profileAutoDetected = false;
+                        updatePreview();
+                    });
+
+                } else {
+                    formTitle.textContent = '✅ НТЕ подключена';
+                    formContent.innerHTML = `
+                        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">Профиль:</label>
+                        <select id="nte-profile-select" class="nte-select">
+                            ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
+                        </select>
+                        <div class="nte-hint">ОЛТ автоматически определит тип НТЕ</div>
+                        <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-top: 10px;">
+                            <div style="font-size: 11px; color: #1976D2;">
+                                💡 НТЕ будет найдена по статусу unconfigured и настроена с выбранным профилем
+                            </div>
+                        </div>
+                    `;
+
+                    const profileSelect = document.getElementById('nte-profile-select');
+                    profileSelect.addEventListener('change', function() {
+                        nteFormState.profile = this.value;
+                        updatePreview();
+                    });
+                }
             }
 
             updatePreview();
         }
 
-        statusRadios.forEach(radio => {
-            radio.addEventListener('change', updateForm);
-        });
+        // Обработчики для статуса NTE
+        if (statusRadios.length > 0) {
+            statusRadios.forEach(radio => {
+                radio.addEventListener('change', updateForm);
+            });
+        }
 
         updateForm();
 
         function getCurrentFormData() {
-            const selectedStatus = document.querySelector('input[name="nte-status"]:checked').value;
-            const profileSelect = document.getElementById('nte-profile-select');
-            const selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
-            let macAddress = '';
+            if (nteMode === 'onu') {
+                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
 
-            if (selectedStatus === 'not_connected') {
-                const macInput = document.getElementById('nte-mac-input');
-                const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
+                if (selectedStatus === 'not_connected') {
+                    const snInput = document.getElementById('onu-sn-input');
+                    const sn = snInput ? snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
 
-                if (rawMac.length !== 12) {
-                    showNotification('❌ Введите корректный MAC-адрес (12 символов)', 'error');
-                    return null;
+                    if (sn.length !== 12) {
+                        showNotification('❌ SN должен содержать 12 символов', 'error');
+                        return null;
+                    }
+
+                    return { mode: 'onu', status: selectedStatus, sn: sn };
                 }
 
-                macAddress = formatMAC(rawMac);
-            }
+                return { mode: 'onu', status: selectedStatus, sn: '' };
+            } else {
+                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+                const profileSelect = document.getElementById('nte-profile-select');
+                const selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
+                let macAddress = '';
 
-            return { selectedStatus, selectedProfile, macAddress };
+                if (selectedStatus === 'not_connected') {
+                    const macInput = document.getElementById('nte-mac-input');
+                    const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
+
+                    if (rawMac.length !== 12) {
+                        showNotification('❌ Введите корректный MAC-адрес (12 символов)', 'error');
+                        return null;
+                    }
+
+                    macAddress = formatMAC(rawMac);
+                }
+
+                return { mode: 'nte', status: selectedStatus, mac: macAddress, profile: selectedProfile };
+            }
         }
+
 
         document.getElementById('nte-copy-config').addEventListener('click', function() {
             const data = getCurrentFormData();
             if (!data) return;
 
-            copyNTEConfig(data.selectedStatus, data.macAddress, data.selectedProfile);
+            if (data.mode === 'onu') {
+                copyONUConfig(data.sn, data.status);
+            } else {
+                copyNTEConfig(data.status, data.mac, data.profile);
+            }
         });
 
-        document.getElementById('nte-back-to-main').addEventListener('click', backToMain);
+        document.getElementById('nte-back-to-main').addEventListener('click', function() {
+            isInputFocused = false;
+            backToMain();
+        });
+
+        // Сохраняем флаг в глобальную переменную для доступа из updateCollectedData
+        window.nteInputFocused = () => isInputFocused;
+        window.isSNInputFocused = () => isSNFocused;
+    }
+    function copyONUConfig(sn, status) {
+        const desc = collectedData.combined || getDescWithoutContract() || '—';
+        const vlan = collectedData.vlan;
+        const cdataIp = getCdataIp();
+
+        let output;
+        if (status === 'not_connected') {
+            output = `SN: ${sn || '—'}
+CDATA IP: ${cdataIp || '—'}
+Vlan: ${vlan || '—'}
+Desc: ${desc || '—'}`;
+        } else {
+            output = `CDATA IP: ${cdataIp || '—'}
+Vlan: ${vlan || '—'}
+Desc: ${desc || '—'}
+Статус: ONU подключена (unconfigured)`;
+        }
+
+        navigator.clipboard.writeText(output).then(() => {
+            showNotification('✅ Данные ONU скопированы в буфер обмена', 'success');
+        }).catch(err => {
+            console.error('Ошибка копирования:', err);
+            showNotification('❌ Ошибка копирования', 'error');
+        });
+    }
+
+    function formatMAC(mac) {
+        mac = mac.toUpperCase().replace(/[^0-9A-F]/g, '');
+        if (mac.length !== 12) return mac;
+        return mac.match(/.{2}/g).join(':');
+    }
+
+    function detectProfileByMAC(mac) {
+        const cleanMac = mac.toUpperCase().replace(/[^0-9A-F]/g, '');
+        const prefix = cleanMac.substring(0, 6);
+
+        if (prefix === '02005E') {
+            console.log('✅ Обнаружен MAC ICT (02:00:5E), профиль: NTE-2-VPU');
+            return 'NTE-2-VPU';
+        }
+
+        if (prefix === '02004B') {
+            console.log('✅ Обнаружен MAC ZTE (02:00:4B), профиль: NTE-RG-VPU');
+            return 'NTE-RG-VPU';
+        }
+
+        return null;
     }
 
     function setupCopyButtons() {
@@ -997,6 +1547,14 @@ Desc: ${desc || '—'}`;
             if (dataChanged) {
                 content.innerHTML = renderMainView();
                 setupCopyButtons();
+            }
+        } else if (currentView === 'nte-wizard') {
+            // Всегда проверяем и обновляем данные в NTE Wizard
+            if (dataChanged) {
+                saveNTEFormState();
+                content.innerHTML = renderNTEView();
+                setupNTEEventListeners();
+                console.log('🔄 NTE Wizard обновлен из updateContent');
             }
         }
     }
