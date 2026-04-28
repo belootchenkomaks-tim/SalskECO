@@ -15,8 +15,6 @@
 
     // ==================== КОНФИГУРАЦИЯ ====================
 
-    const EXTENSION_ID = 'ociajmahhgljbachndhfkcfjffbebdgj';
-
     let collectedData = {
         contract: '',
         address: '',
@@ -378,19 +376,89 @@
         }
     }
 
-    function launchExtension() {
-        const extensionId = 'ociajmahhgljbachndhfkcfjffbebdgj';
-        saveDataForUserside();
-        localStorage.setItem('billing_tools_data', JSON.stringify(collectedData));
+// Ваша функция в userscript
+function findAndLaunchExtension() {
+    saveDataForUserside();
+    localStorage.setItem('billing_tools_data', JSON.stringify(collectedData));
+
+    // Способ 1: Получить ID из localStorage (туда его сохранило расширение)
+    const extensionId = localStorage.getItem('billing_extension_id');
+
+    if (extensionId) {
+        console.log('✅ ID расширения из localStorage:', extensionId);
         const extensionUrl = `chrome-extension://${extensionId}/floating-panel.html`;
         const popup = window.open(extensionUrl, 'BillingTools', 'width=350,height=500,popup=yes');
+        if (popup) {
+            setTimeout(() => popup.focus(), 500);
+            showNotification('✅ Расширение запущено', 'success');
+        }
+        return;
+    }
+
+    // Способ 2: Получить ID из meta-тега
+    const metaTag = document.querySelector('meta[name="billing-extension-id"]');
+    if (metaTag && metaTag.content) {
+        const id = metaTag.content;
+        console.log('✅ ID расширения из meta:', id);
+        localStorage.setItem('billing_extension_id', id);
+        window.open(`chrome-extension://${id}/floating-panel.html`, 'BillingTools', 'width=350,height=500');
+        return;
+    }
+
+    // Способ 3: Ждем событие от расширения
+    let eventFired = false;
+    const eventHandler = function(e) {
+        if (!eventFired && e.detail && e.detail.extensionId) {
+            eventFired = true;
+            const id = e.detail.extensionId;
+            console.log('✅ ID расширения из события:', id);
+            localStorage.setItem('billing_extension_id', id);
+            window.open(`chrome-extension://${id}/floating-panel.html`, 'BillingTools', 'width=350,height=500');
+            window.removeEventListener('billingExtensionLoaded', eventHandler);
+        }
+    };
+    window.addEventListener('billingExtensionLoaded', eventHandler);
+
+    // Способ 4: Запросить через postMessage (на случай если расширение уже загружено)
+    window.postMessage({
+        type: 'GET_EXTENSION_ID',
+        source: 'tampermonkey-billing'
+    }, '*');
+
+    const messageHandler = function(event) {
+        if (event.data && event.data.type === 'EXTENSION_ID_RESPONSE' && event.data.extensionId) {
+            const id = event.data.extensionId;
+            console.log('✅ ID расширения через postMessage:', id);
+            localStorage.setItem('billing_extension_id', id);
+            window.open(`chrome-extension://${id}/floating-panel.html`, 'BillingTools', 'width=350,height=500');
+            window.removeEventListener('message', messageHandler);
+        }
+    };
+    window.addEventListener('message', messageHandler);
+
+    // Таймаут если ничего не сработало
+    setTimeout(() => {
+        if (!localStorage.getItem('billing_extension_id')) {
+            showNotification('❌ Расширение не найдено. Обновите страницу', 'error');
+        }
+    }, 3000);
+}
+
+function openExtensionById(extensionId) {
+    const extensionUrl = `chrome-extension://${extensionId}/floating-panel.html`;
+    const popup = window.open(extensionUrl, 'BillingTools', 'width=350,height=500,popup=yes');
+
+    if (popup) {
         setTimeout(() => {
-            if (popup) {
+            if (popup && !popup.closed) {
                 popup.focus();
             }
         }, 500);
+        showNotification('✅ Расширение запущено', 'success');
+    } else {
+        showNotification('❌ Не удалось открыть расширение', 'error');
     }
-
+}
     function copyNTEConfig(nteStatus, macAddress, selectedProfile) {
         const desc = collectedData.descWithoutContract || getDescWithoutContract();
         const vlan = collectedData.vlan;
@@ -1767,7 +1835,7 @@ Desc: ${desc || '—'}
             extensionTooltip.style.opacity = '0';
         };
 
-        extensionIcon.onclick = launchExtension;
+        extensionIcon.onclick = findAndLaunchExtension;
 
         // LTE ICON
         const lteIcon = document.createElement('div');
