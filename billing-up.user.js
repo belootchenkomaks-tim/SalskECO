@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP
 // @namespace    http://tampermonkey.net/
-// @version      9.2
+// @version      9.3
 // @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -459,29 +459,40 @@ function openExtensionById(extensionId) {
         showNotification('❌ Не удалось открыть расширение', 'error');
     }
 }
-    function copyNTEConfig(nteStatus, macAddress, selectedProfile) {
-        const desc = collectedData.descWithoutContract || getDescWithoutContract();
-        const vlan = collectedData.vlan;
-        const olt = collectedData.olt;
+                function copyNTEConfig(nteStatus, macAddress, selectedProfile) {
+                    const desc = collectedData.descWithoutContract || getDescWithoutContract();
+                    const vlan = collectedData.vlan;
+                    const olt = collectedData.olt;
 
-        let formattedMac = macAddress;
-        if (macAddress && !macAddress.includes(':')) {
-            formattedMac = formatMAC(macAddress);
-        }
+                    let formattedMac = macAddress;
+                    if (macAddress && !macAddress.includes(':')) {
+                        formattedMac = formatMAC(macAddress);
+                    }
 
-        const output = `MAC: ${formattedMac || '—'}
+                    const statusText = nteStatus === 'not_connected' ? 'Не подключена' : 'Подключена';
+
+                    let output;
+                    if (nteStatus === 'not_connected') {
+                        output = `Status: ${statusText}
+MAC: ${formattedMac || '—'}
 Profile: ${selectedProfile}
 OLT: ${olt || '—'}
 Vlan: ${vlan || '—'}
 Desc: ${desc || '—'}`;
+                    } else {
+                        output = `Status: ${statusText}
+OLT: ${olt || '—'}
+Vlan: ${vlan || '—'}
+Desc: ${desc || '—'}`;
+                    }
 
-        navigator.clipboard.writeText(output).then(() => {
-            showNotification('✅ Данные скопированы в буфер обмена', 'success');
-        }).catch(err => {
-            console.error('Ошибка копирования:', err);
-            showNotification('❌ Ошибка копирования', 'error');
-        });
-    }
+                    navigator.clipboard.writeText(output).then(() => {
+                        showNotification('✅ Данные скопированы в буфер обмена', 'success');
+                    }).catch(err => {
+                        console.error('Ошибка копирования:', err);
+                        showNotification('❌ Ошибка копирования', 'error');
+                    });
+                }
 
     function showNotification(message, type) {
         const notification = document.createElement('div');
@@ -1206,71 +1217,76 @@ Desc: ${desc || '—'}`;
             }
         }
 
-        function updatePreview() {
-            let desc, olt, vlan;
+                function updatePreview() {
+                    let desc, olt, vlan;
 
-            if (nteMode === 'onu') {
-                desc = collectedData.combined || getDescWithoutContract() || '—';
-                olt = getCdataIp() || '—';
-                vlan = getVlan() || collectedData.vlan || '—';
+                    if (nteMode === 'onu') {
+                        desc = collectedData.combined || getDescWithoutContract() || '—';
+                        olt = getCdataIp() || '—';
+                        vlan = getVlan() || collectedData.vlan || '—';
 
-                if (getVlan()) collectedData.vlan = getVlan();
-                const cdataIp = getCdataIp();
-                if (cdataIp) collectedData.olt = cdataIp;
-            } else {
-                desc = getDescWithoutContract() || '—';
-                vlan = getVlan() || collectedData.vlan || '—';
-                olt = getOlt() || collectedData.olt || collectedData.ip || '—';
+                        if (getVlan()) collectedData.vlan = getVlan();
+                        const cdataIp = getCdataIp();
+                        if (cdataIp) collectedData.olt = cdataIp;
+                    } else {
+                        desc = getDescWithoutContract() || '—';
+                        vlan = getVlan() || collectedData.vlan || '—';
+                        olt = getOlt() || collectedData.olt || collectedData.ip || '—';
 
-                if (getVlan()) collectedData.vlan = getVlan();
-                if (getOlt()) collectedData.olt = getOlt();
-            }
+                        if (getVlan()) collectedData.vlan = getVlan();
+                        if (getOlt()) collectedData.olt = getOlt();
+                    }
 
-            let selectedProfile = '';
-            if (nteMode === 'nte') {
-                const profileSelect = document.getElementById('nte-profile-select');
-                selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
-            }
+                    const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+                    let selectedProfile = '';
 
-            let identifier = '';
+                    if (nteMode === 'nte' && selectedStatus === 'not_connected') {
+                        const profileSelect = document.getElementById('nte-profile-select');
+                        selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
+                    }
 
-            if (nteMode === 'onu') {
-                const snInput = document.getElementById('onu-sn-input');
-                if (snInput && snInput.value) {
-                    identifier = snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '');
-                }
-            } else {
-                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
-                if (selectedStatus === 'not_connected') {
-                    const macInput = document.getElementById('nte-mac-input');
-                    if (macInput) {
-                        const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
-                        if (rawMac.length === 12) {
-                            identifier = formatMAC(rawMac);
-                        } else if (macInput.value) {
-                            identifier = macInput.value;
+                    let identifier = '';
+
+                    if (nteMode === 'onu') {
+                        const snInput = document.getElementById('onu-sn-input');
+                        if (snInput && snInput.value) {
+                            identifier = snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '');
+                        }
+                    } else {
+                        if (selectedStatus === 'not_connected') {
+                            const macInput = document.getElementById('nte-mac-input');
+                            if (macInput) {
+                                const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
+                                if (rawMac.length === 12) {
+                                    identifier = formatMAC(rawMac);
+                                } else if (macInput.value) {
+                                    identifier = macInput.value;
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            previewBox.style.display = 'block';
+                    previewBox.style.display = 'block';
 
-            if (nteMode === 'onu') {
-                previewBox.innerHTML = `<strong>Предпросмотр (ONU):</strong>
+                    if (nteMode === 'onu') {
+                        previewBox.innerHTML = `<strong>Предпросмотр (ONU):</strong>
 SN: ${identifier || '—'}
 CDATA IP: ${olt}
 Vlan: ${vlan}
 Desc: ${desc}`;
-            } else {
-                previewBox.innerHTML = `<strong>Предпросмотр (NTE):</strong>
-MAC: ${identifier || '—'}
-Profile: ${selectedProfile}
+                    } else {
+                        let profileLine = '';
+                        if (selectedStatus === 'not_connected') {
+                            profileLine = `\nProfile: ${selectedProfile}`;
+                        }
+
+                        previewBox.innerHTML = `<strong>Предпросмотр (NTE):</strong>
+MAC: ${identifier || '—'}${profileLine}
 OLT: ${olt}
 Vlan: ${vlan}
 Desc: ${desc}`;
-            }
-        }
+                    }
+                }
 
                 function updateForm() {
             if (nteMode === 'onu') {
@@ -1427,23 +1443,13 @@ Desc: ${desc}`;
                 } else {
                     formTitle.textContent = '✅ НТЕ подключена';
                     formContent.innerHTML = `
-                        <label style="font-size: 12px; color: #666; display: block; margin-bottom: 5px;">Профиль:</label>
-                        <select id="nte-profile-select" class="nte-select">
-                            ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
-                        </select>
-                        <div class="nte-hint">ОЛТ автоматически определит тип НТЕ</div>
                         <div style="background: #e3f2fd; padding: 10px; border-radius: 6px; margin-top: 10px;">
                             <div style="font-size: 11px; color: #1976D2;">
-                                💡 НТЕ будет найдена по статусу unconfigured и настроена с выбранным профилем
+                                💡 НТЕ будет найдена по статусу unconfigured и настроена автоматически<br>
+                                <span style="font-size: 10px; color: #666;">Профиль определяется автоматически</span>
                             </div>
                         </div>
                     `;
-
-                    const profileSelect = document.getElementById('nte-profile-select');
-                    profileSelect.addEventListener('change', function() {
-                        nteFormState.profile = this.value;
-                        updatePreview();
-                    });
                 }
             }
 
@@ -1458,45 +1464,46 @@ Desc: ${desc}`;
         }
 
         updateForm();
+                function getCurrentFormData() {
+                    if (nteMode === 'onu') {
+                        const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
 
-        function getCurrentFormData() {
-            if (nteMode === 'onu') {
-                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+                        if (selectedStatus === 'not_connected') {
+                            const snInput = document.getElementById('onu-sn-input');
+                            const sn = snInput ? snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
 
-                if (selectedStatus === 'not_connected') {
-                    const snInput = document.getElementById('onu-sn-input');
-                    const sn = snInput ? snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+                            if (sn.length !== 12) {
+                                showNotification('❌ SN должен содержать 12 символов', 'error');
+                                return null;
+                            }
 
-                    if (sn.length !== 12) {
-                        showNotification('❌ SN должен содержать 12 символов', 'error');
-                        return null;
+                            return { mode: 'onu', status: selectedStatus, sn: sn };
+                        }
+
+                        return { mode: 'onu', status: selectedStatus, sn: '' };
+                    } else {
+                        const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+                        let macAddress = '';
+                        let selectedProfile = '';
+
+                        if (selectedStatus === 'not_connected') {
+                            const macInput = document.getElementById('nte-mac-input');
+                            const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
+
+                            if (rawMac.length !== 12) {
+                                showNotification('❌ Введите корректный MAC-адрес (12 символов)', 'error');
+                                return null;
+                            }
+
+                            macAddress = formatMAC(rawMac);
+
+                            const profileSelect = document.getElementById('nte-profile-select');
+                            selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
+                        }
+
+                        return { mode: 'nte', status: selectedStatus, mac: macAddress, profile: selectedProfile };
                     }
-
-                    return { mode: 'onu', status: selectedStatus, sn: sn };
                 }
-
-                return { mode: 'onu', status: selectedStatus, sn: '' };
-            } else {
-                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
-                const profileSelect = document.getElementById('nte-profile-select');
-                const selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
-                let macAddress = '';
-
-                if (selectedStatus === 'not_connected') {
-                    const macInput = document.getElementById('nte-mac-input');
-                    const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
-
-                    if (rawMac.length !== 12) {
-                        showNotification('❌ Введите корректный MAC-адрес (12 символов)', 'error');
-                        return null;
-                    }
-
-                    macAddress = formatMAC(rawMac);
-                }
-
-                return { mode: 'nte', status: selectedStatus, mac: macAddress, profile: selectedProfile };
-            }
-        }
 
 
         document.getElementById('nte-copy-config').addEventListener('click', function() {
@@ -1519,31 +1526,34 @@ Desc: ${desc}`;
         window.nteInputFocused = () => isInputFocused;
         window.isSNInputFocused = () => isSNFocused;
     }
-    function copyONUConfig(sn, status) {
-        const desc = collectedData.combined || getDescWithoutContract() || '—';
-        const vlan = collectedData.vlan;
-        const cdataIp = getCdataIp();
+                function copyONUConfig(sn, status) {
+                    const desc = collectedData.combined || getDescWithoutContract() || '—';
+                    const vlan = collectedData.vlan;
+                    const cdataIp = getCdataIp();
 
-        let output;
-        if (status === 'not_connected') {
-            output = `SN: ${sn || '—'}
+                    const statusText = status === 'not_connected' ? 'Не подключена' : 'Подключена';
+
+                    let output;
+                    if (status === 'not_connected') {
+                        output = `Status: ${statusText}
+SN: ${sn || '—'}
 CDATA IP: ${cdataIp || '—'}
 Vlan: ${vlan || '—'}
 Desc: ${desc || '—'}`;
-        } else {
-            output = `CDATA IP: ${cdataIp || '—'}
+                    } else {
+                        output = `Status: ${statusText}
+CDATA IP: ${cdataIp || '—'}
 Vlan: ${vlan || '—'}
-Desc: ${desc || '—'}
-Статус: ONU подключена (unconfigured)`;
-        }
+Desc: ${desc || '—'}`;
+                    }
 
-        navigator.clipboard.writeText(output).then(() => {
-            showNotification('✅ Данные ONU скопированы в буфер обмена', 'success');
-        }).catch(err => {
-            console.error('Ошибка копирования:', err);
-            showNotification('❌ Ошибка копирования', 'error');
-        });
-    }
+                    navigator.clipboard.writeText(output).then(() => {
+                        showNotification('✅ Данные ONU скопированы в буфер обмена', 'success');
+                    }).catch(err => {
+                        console.error('Ошибка копирования:', err);
+                        showNotification('❌ Ошибка копирования', 'error');
+                    });
+                }
 
     function formatMAC(mac) {
         mac = mac.toUpperCase().replace(/[^0-9A-F]/g, '');
