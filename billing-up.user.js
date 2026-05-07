@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.4
+// @version      10.3
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1002,7 +1002,7 @@ Desc: ${desc || '—'}`;
             bottom: 0;
             left: 0;
             width: 100%;
-            height: 72px;
+            height: 80px;
             z-index: 999999;
             background: #ffffff;
             display: flex;
@@ -1144,115 +1144,102 @@ Desc: ${desc || '—'}`;
         if (!content) return;
 
         // Принудительно получаем свежие данные
-        const freshVlan = getVlan();
-        const freshOlt = getOlt();
-        const freshIp = getIpAndCdataNumber();
-        if (freshVlan) collectedData.vlan = freshVlan;
-        if (freshOlt) collectedData.olt = freshOlt;
-        if (freshIp.ip) collectedData.ip = freshIp.ip;
-        if (freshIp.cdataNumber) collectedData.cdataNumber = freshIp.cdataNumber;
+        var fVlan = getVlan();
+        var fOlt = getOlt();
+        var fIp = getIpAndCdataNumber();
+        if (fVlan) collectedData.vlan = fVlan;
+        if (fOlt) collectedData.olt = fOlt;
+        if (fIp.ip) collectedData.ip = fIp.ip;
+        if (fIp.cdataNumber) collectedData.cdataNumber = fIp.cdataNumber;
         if (!collectedData.olt && collectedData.ip) collectedData.olt = collectedData.ip;
 
-        const cdataIp = getCdataIp();
-        let displayOlt, displayDesc;
+        var cdataIp = getCdataIp();
+        var oltVal, descVal;
         if (nteMode === 'onu') {
-            displayOlt = cdataIp || '❌ НЕ НАЙДЕН';
-            displayDesc = collectedData.combined || '—';
+            oltVal = cdataIp || '❌';
+            descVal = collectedData.combined || '—';
         } else {
-            displayOlt = collectedData.olt || '❌ НЕ НАЙДЕН';
-            displayDesc = getDescWithoutContract() || '—';
+            oltVal = collectedData.olt || '❌';
+            descVal = getDescWithoutContract() || '—';
         }
-        const currentVlan = collectedData.vlan || '';
-        const savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
-        const selectedMac = nteFormState.mac;
-        const selectedProfile = nteFormState.profile;
-        const selectedSN = onuFormState.sn;
+        var vlanVal = collectedData.vlan || '—';
+        var savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
 
-        // Вычисляем предпросмотр
-        var previewText = '';
-        var oltVal = displayOlt;
-        var vlanVal = currentVlan || '—';
-        var descVal = displayDesc;
-
+        // Предпросмотр — левая часть (идентификатор)
+        var idLine = '', rightLine = '';
         if (nteMode === 'onu') {
-            var sn = selectedSN ? selectedSN.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
-            var snDisplay = sn || '—';
-            previewText = 'ONU\nSN: ' + snDisplay + '\nCDATA: ' + oltVal + '\nVLAN: ' + vlanVal + '\nDESC: ' + descVal;
+            var sn = onuFormState.sn ? onuFormState.sn.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+            idLine = 'SN: ' + (sn || '—');
+            rightLine = 'CDATA: ' + oltVal + '  VLAN: ' + vlanVal;
         } else {
-            var mac = selectedMac ? selectedMac.replace(/[^0-9A-F]/g, '') : '';
-            var macDisplay = mac.length === 12 ? formatMAC(mac) : (mac || '—');
-            var profileDisplay = (savedStatus === 'not_connected' && selectedProfile) ? selectedProfile : '—';
-            previewText = 'NTE\nMAC: ' + macDisplay + '\nOLT: ' + oltVal + '\nVLAN: ' + vlanVal + '\nDESC: ' + descVal;
-            if (savedStatus === 'not_connected' && selectedProfile) {
-                previewText += '\nProfile: ' + selectedProfile;
-            }
+            var mac = nteFormState.mac ? nteFormState.mac.replace(/[^0-9A-F]/g, '') : '';
+            var macDisp = mac.length === 12 ? formatMAC(mac) : (mac || '—');
+            idLine = 'MAC: ' + macDisp;
+            var pLine = (savedStatus === 'not_connected' && nteFormState.profile) ? '  Profile: ' + nteFormState.profile : '';
+            rightLine = 'OLT: ' + oltVal + '  VLAN: ' + vlanVal + pLine;
         }
 
-        content.innerHTML = `
-            <style>
-                .bar-col-label { font-size:10px; color:#999; font-weight:600; font-family:'Orbitron',sans-serif; letter-spacing:0.3px; }
-                .bar-col-value { font-size:12px; font-family:'SF Mono',monospace; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-                .bar-col-value.good { color:#4CAF50; }
-                .bar-col-value.bad { color:#f44336; }
-                .bar-mode-switch { display:flex; background:#e0e0e0; border-radius:5px; padding:2px; gap:2px; }
-                .bar-mode-btn { padding:3px 12px; border:none; background:transparent; cursor:pointer; font-family:'Orbitron',sans-serif; font-size:11px; font-weight:600; color:#666; border-radius:4px; transition:all 0.2s; }
-                .bar-mode-btn.active { background:white; color:#FF9800; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
-                .bar-mode-btn:hover:not(.active) { background:rgba(255,255,255,0.5); }
-                .bar-radio-label { display:flex; align-items:center; gap:3px; cursor:pointer; font-size:11px; white-space:nowrap; color:#333; }
-                .bar-field { padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px; font-family:'SF Mono',monospace; box-sizing:border-box; }
-                .bar-field:focus { outline:none; border-color:#FF9800; box-shadow:0 0 0 2px rgba(255,152,0,0.1); }
-                .bar-select { padding:3px 4px; border:1px solid #ccc; border-radius:4px; font-size:11px; background:white; box-sizing:border-box; }
-                .bar-copy-btn { background:linear-gradient(135deg,#FF9800,#F57C00); color:white; border:none; padding:4px 12px; border-radius:4px; font-size:10px; font-weight:600; cursor:pointer; font-family:'Orbitron',sans-serif; letter-spacing:0.3px; white-space:nowrap; }
-                .bar-copy-btn:hover { background:linear-gradient(135deg,#F57C00,#E65100); }
-                .bar-preview { font-size:10px; font-family:'SF Mono',monospace; color:#555; white-space:pre; line-height:1.3; overflow:hidden; }
-                .bar-mac-hint { font-size:10px; color:#FF9800; font-family:'SF Mono',monospace; }
-            </style>
+        content.innerHTML = '' +
+            '<style>' +
+                '.bc-l { font-size:10px; color:#999; font-weight:600; font-family:Orbitron,sans-serif; letter-spacing:0.3px; }' +
+                '.bc-v { font-size:12px; font-family:SF Mono,monospace; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }' +
+                '.bc-v.og { color:#4CAF50; } .bc-v.ob { color:#f44336; }' +
+                '.bc-ms { display:inline-flex; background:#e0e0e0; border-radius:5px; padding:2px; gap:0; }' +
+                '.bc-mb { padding:3px 12px; border:none; background:transparent; cursor:pointer; font-family:Orbitron,sans-serif; font-size:11px; font-weight:600; color:#666; border-radius:4px; }' +
+                '.bc-mb.act { background:white; color:#FF9800; box-shadow:0 1px 3px rgba(0,0,0,0.1); }' +
+                '.bc-rl { display:flex; align-items:center; gap:3px; cursor:pointer; font-size:11px; white-space:nowrap; color:#333; }' +
+                '.bc-f { padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px; font-family:SF Mono,monospace; box-sizing:border-box; }' +
+                '.bc-f:focus { outline:none; border-color:#FF9800; }' +
+                '.bc-sl { padding:3px 4px; border:1px solid #ccc; border-radius:4px; font-size:11px; background:white; }' +
+                '.bc-cp { background:linear-gradient(135deg,#FF9800,#F57C00); color:white; border:none; padding:4px 12px; border-radius:4px; font-size:10px; font-weight:600; cursor:pointer; font-family:Orbitron,sans-serif; white-space:nowrap; }' +
+                '.bc-cp:hover { background:linear-gradient(135deg,#F57C00,#E65100); }' +
+                '.bc-ph { font-size:10px; color:#FF9800; font-family:SF Mono,monospace; }' +
+                '.bc-pv { font-size:10px; font-family:SF Mono,monospace; color:#555; overflow:hidden; }' +
+            '</style>' +
 
-            <div style="display:flex; height:100%; gap:8px; align-items:stretch; min-width:0;">
+            '<div style="display:flex;height:100%;gap:6px;align-items:stretch;min-width:0;">' +
 
-                <!-- Колонка 2: Режим + Статус -->
-                <div style="display:flex; flex-direction:column; gap:4px; flex:0 0 145px; justify-content:center;">
-                    <div class="bar-mode-switch">
-                        <button class="bar-mode-btn ${nteMode === 'nte' ? 'active' : ''}" id="mode-nte-btn">NTE</button>
-                        <button class="bar-mode-btn ${nteMode === 'onu' ? 'active' : ''}" id="mode-onu-btn">ONU</button>
-                    </div>
-                    <div style="display:flex; flex-direction:column; gap:1px;">
-                        <label class="bar-radio-label"><input type="radio" name="nte-status" value="not_connected" ${savedStatus === 'not_connected' ? 'checked' : ''}> Не подключена</label>
-                        <label class="bar-radio-label"><input type="radio" name="nte-status" value="connected" ${savedStatus === 'connected' ? 'checked' : ''}> Подключена</label>
-                    </div>
-                </div>
+                // Колонка 2: Режим + Статус
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:0 0 135px;justify-content:center;">' +
+                    '<div class="bc-ms">' +
+                        '<button class="bc-mb ' + (nteMode === 'nte' ? 'act' : '') + '" id="mode-nte-btn">NTE</button>' +
+                        '<button class="bc-mb ' + (nteMode === 'onu' ? 'act' : '') + '" id="mode-onu-btn">ONU</button>' +
+                    '</div>' +
+                    '<div style="display:flex;flex-direction:column;gap:1px;">' +
+                        '<label class="bc-rl"><input type="radio" name="nte-status" value="not_connected" ' + (savedStatus === 'not_connected' ? 'checked' : '') + '> Не подключена</label>' +
+                        '<label class="bc-rl"><input type="radio" name="nte-status" value="connected" ' + (savedStatus === 'connected' ? 'checked' : '') + '> Подключена</label>' +
+                    '</div>' +
+                '</div>' +
 
-                <!-- Колонка 3: Данные -->
-                <div style="display:flex; flex-direction:column; gap:2px; flex:2; justify-content:center; min-width:0;">
-                    <div style="display:flex; align-items:center; gap:4px;">
-                        <span class="bar-col-label">DESC:</span>
-                        <span class="bar-col-value" style="flex:1;" title="${descVal}">${descVal}</span>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:4px;">
-                        <span class="bar-col-label">${nteMode === 'onu' ? 'CDATA' : 'OLT'}:</span>
-                        <span class="bar-col-value ${oltVal !== '❌ НЕ НАЙДЕН' ? 'good' : 'bad'}">${oltVal}</span>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:4px;">
-                        <span class="bar-col-label">VLAN:</span>
-                        <span class="bar-col-value ${vlanVal !== '—' ? 'good' : 'bad'}">${vlanVal}</span>
-                    </div>
-                </div>
+                // Колонка 3: Данные
+                '<div style="display:flex;flex-direction:column;gap:2px;flex:2;justify-content:center;min-width:0;">' +
+                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                        '<span class="bc-l">DESC:</span>' +
+                        '<span class="bc-v" style="flex:1;" title="' + descVal + '">' + descVal + '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                        '<span class="bc-l">' + (nteMode === 'onu' ? 'CDATA' : 'OLT') + ':</span>' +
+                        '<span class="bc-v ' + (oltVal !== '❌' ? 'og' : 'ob') + '">' + oltVal + '</span>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                        '<span class="bc-l">VLAN:</span>' +
+                        '<span class="bc-v ' + (vlanVal !== '—' ? 'og' : 'ob') + '">' + vlanVal + '</span>' +
+                    '</div>' +
+                '</div>' +
 
-                <!-- Колонка 4: Форма (MAC/SN + Profile) -->
-                <div style="display:flex; flex-direction:column; gap:4px; flex:1.5; justify-content:center; min-width:0;">
-                    <div id="bar-form-fields" style="display:flex; flex-direction:column; gap:4px;">
-                        <!-- Заполняется динамически в updateBarForm() -->
-                    </div>
-                </div>
+                // Колонка 4: Форма (MAC/SN + Profile)
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:1.3;justify-content:center;min-width:0;">' +
+                    '<div id="bar-form-fields" style="display:flex;flex-direction:column;gap:3px;"></div>' +
+                '</div>' +
 
-                <!-- Колонка 5: Предпросмотр + Копировать -->
-                <div style="display:flex; flex-direction:column; gap:3px; flex:0 0 175px; justify-content:center;">
-                    <div class="bar-preview" id="bar-preview-text">${previewText}</div>
-                    <button class="bar-copy-btn" id="nte-copy-config" style="align-self:flex-end;">📋 Копировать</button>
-                </div>
+                // Колонка 5: Предпросмотр (2 строки) + Копировать
+                '<div style="display:flex;flex-direction:column;gap:2px;flex:0 0 190px;justify-content:center;">' +
+                    '<div class="bc-pv">' + idLine + '</div>' +
+                    '<div class="bc-pv">' + rightLine + '</div>' +
+                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-end;margin-top:1px;">📋 Копировать</button>' +
+                '</div>' +
 
-            </div>
-        `;
+            '</div>';
 
         updateBarForm();
     }
@@ -1265,31 +1252,34 @@ Desc: ${desc || '—'}`;
 
         if (nteMode === 'onu') {
             if (selectedStatus === 'not_connected') {
-                formFields.innerHTML = '<span class="bar-col-label">SN:</span>' +
-                    '<input type="text" id="onu-sn-input" class="bar-field" placeholder="HWTCAF6DEECC" maxlength="12" value="' + onuFormState.sn + '" style="width:100%;">' +
-                    '<span id="onu-sn-preview" class="bar-mac-hint"></span>';
+                formFields.innerHTML = '' +
+                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                        '<span class="bc-l" style="flex-shrink:0;">SN:</span>' +
+                        '<input type="text" id="onu-sn-input" class="bc-f" placeholder="HWTCAF6DEECC" maxlength="12" value="' + onuFormState.sn + '" style="width:140px;">' +
+                    '</div>' +
+                    '<span id="onu-sn-preview" class="bc-ph"></span>';
             } else {
-                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;line-height:1.4;">✅ Настроится<br>автоматически</span>';
+                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;">✅ Настроится автоматически</span>';
             }
         } else {
             if (selectedStatus === 'not_connected') {
-                formFields.innerHTML =
-                    '<div style="display:flex; align-items:center; gap:4px;">' +
-                        '<span class="bar-col-label" style="flex-shrink:0;">MAC:</span>' +
-                        '<input type="text" id="nte-mac-input" class="bar-field" placeholder="02005E09DCF8" maxlength="17" value="' + nteFormState.mac + '" style="flex:1;">' +
+                formFields.innerHTML = '' +
+                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                        '<span class="bc-l" style="flex-shrink:0;">MAC:</span>' +
+                        '<input type="text" id="nte-mac-input" class="bc-f" placeholder="02005E09DCF8" maxlength="17" value="' + nteFormState.mac + '" style="width:160px;">' +
                     '</div>' +
-                    '<div style="display:flex; align-items:center; gap:4px;">' +
-                        '<span class="bar-col-label" style="flex-shrink:0;">Profile:</span>' +
-                        '<select id="nte-profile-select" class="bar-select" style="flex:1;">' +
+                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                        '<span class="bc-l" style="flex-shrink:0;">Profile:</span>' +
+                        '<select id="nte-profile-select" class="bc-sl" style="width:160px;">' +
                             NTE_PROFILES.map(function(p) { return '<option value="' + p + '" ' + (nteFormState.profile === p ? 'selected' : '') + '>' + p + '</option>'; }).join('') +
                         '</select>' +
                     '</div>' +
-                    '<div style="display:flex; gap:6px;">' +
-                        '<span id="nte-mac-preview" class="bar-mac-hint"></span>' +
+                    '<div style="display:flex;gap:6px;">' +
+                        '<span id="nte-mac-preview" class="bc-ph"></span>' +
                         '<span id="nte-profile-hint" style="font-size:10px;color:#999;"></span>' +
                     '</div>';
             } else {
-                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;line-height:1.4;">✅ Настроится<br>автоматически</span>';
+                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;">✅ Настроится автоматически</span>';
             }
         }
 
