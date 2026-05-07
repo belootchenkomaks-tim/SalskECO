@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.14
+// @version      10.15
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1028,7 +1028,6 @@ Desc: ${desc || '—'}`;
             border-top: 1px solid #e0e0e0;
             overflow: visible;
             position: relative;
-            padding-left: 44px;
         `;
 
         // ========== ФЛАЖОК 🚀 (как в старом скрипте) ==========
@@ -1037,6 +1036,9 @@ Desc: ${desc || '—'}`;
         rocketFlag.textContent = '🚀';
         rocketFlag.title = 'Запустить расширение';
         rocketFlag.style.cssText = `
+            position: absolute;
+            bottom: 100%;
+            left: 8px;
             width: 36px;
             height: 22px;
             background: linear-gradient(135deg, #9C27B0, #7B1FA2);
@@ -1046,16 +1048,13 @@ Desc: ${desc || '—'}`;
             justify-content: center;
             font-size: 13px;
             cursor: pointer;
-            box-shadow: 0 2px 6px rgba(156,39,176,0.3);
+            box-shadow: 0 -2px 6px rgba(156,39,176,0.3);
             transition: height 0.2s ease;
             user-select: none;
             z-index: 1000000;
-            position: absolute;
-            top: -22px;
-            left: 8px;
         `;
-        rocketFlag.onmouseover = () => { rocketFlag.style.height = '32px'; rocketFlag.style.fontSize = '18px'; };
-        rocketFlag.onmouseout = () => { rocketFlag.style.height = '22px'; rocketFlag.style.fontSize = '14px'; };
+        rocketFlag.onmouseover = () => { rocketFlag.style.height = '36px'; rocketFlag.style.fontSize = '18px'; };
+        rocketFlag.onmouseout = () => { rocketFlag.style.height = '22px'; rocketFlag.style.fontSize = '13px'; };
         rocketFlag.onclick = findAndLaunchExtension;
 
         // ========== ПРАВАЯ ЧАСТЬ: контент NTE/ONU ==========
