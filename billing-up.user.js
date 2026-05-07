@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.12
+// @version      10.13
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1036,22 +1036,23 @@ Desc: ${desc || '—'}`;
         rocketFlag.title = 'Запустить расширение';
         rocketFlag.style.cssText = `
             width: 36px;
-            height: 26px;
+            height: 18px;
             background: linear-gradient(135deg, #9C27B0, #7B1FA2);
-            border-radius: 0 0 8px 8px;
+            border-radius: 0 0 6px 6px;
             display: flex;
-            align-items: center;
+            align-items: flex-end;
             justify-content: center;
-            font-size: 14px;
+            font-size: 12px;
             cursor: pointer;
             flex-shrink: 0;
             align-self: flex-start;
-            margin-top: -8px;
+            position: relative;
+            top: -14px;
             box-shadow: 0 2px 6px rgba(156,39,176,0.3);
             transition: height 0.2s ease;
             user-select: none;
             z-index: 1000000;
-            position: relative;
+            padding-bottom: 1px;
         `;
         rocketFlag.onmouseover = () => { rocketFlag.style.height = '32px'; rocketFlag.style.fontSize = '18px'; };
         rocketFlag.onmouseout = () => { rocketFlag.style.height = '22px'; rocketFlag.style.fontSize = '14px'; };
@@ -1181,7 +1182,7 @@ Desc: ${desc || '—'}`;
                 '.bc-v.og { color:#4CAF50; } .bc-v.ob { color:#f44336; }' +
                 '.bc-ms { display:inline-flex; flex-direction:column; background:#e0e0e0; border-radius:5px; padding:2px; gap:1px; }' +
                 '.bc-mb { padding:4px 14px; border:none; background:transparent; cursor:pointer; font-family:Orbitron,sans-serif; font-size:13px; font-weight:600; color:#666; border-radius:4px; }' +
-                '.bc-mb.act { background:white; color:#FF9800; box-shadow:0 1px 3px rgba(0,0,0,0.1); }' +
+                '.bc-mb.act { background:white; color:#4CAF50; box-shadow:0 1px 3px rgba(0,0,0,0.1); }' +
                 '.bc-rl { display:flex; align-items:center; gap:4px; cursor:pointer; font-size:13px; white-space:nowrap; color:#333; }' +
                 '.bc-f { padding:4px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px; font-family:SF Mono,monospace; box-sizing:border-box; }' +
                 '.bc-f:focus { outline:none; border-color:#FF9800; }' +
