@@ -582,9 +582,9 @@ Desc: ${desc || '—'}`;
         // НО не обновляем если пользователь вводит данные
         if (dataUpdated && currentView === 'nte-wizard' && content && content.style.display !== 'none' && !isAnyInputFocused) {
             saveNTEFormState();
-            content.innerHTML = renderNTEView();
-            setupNTEEventListeners();
-            console.log('✅ NTE Wizard обновлен с новыми данными');
+            renderBarContent();
+            setupBarInputHandlers();
+            console.log('✅ NTE Bar обновлен с новыми данными');
         } else if (dataUpdated && currentView === 'nte-wizard' && isAnyInputFocused) {
             console.log('⏸️ Пользователь вводит данные, откладываем обновление');
         }
@@ -659,8 +659,8 @@ Desc: ${desc || '—'}`;
         });
 
         if (currentView === 'nte-wizard' && content) {
-            content.innerHTML = renderNTEView();
-            setupNTEEventListeners();
+            renderBarContent();
+            setupBarInputHandlers();
             showNotification('🔄 DESC изменился, данные обновлены', 'info');
         }
     }
@@ -686,271 +686,6 @@ Desc: ${desc || '—'}`;
         }
     }
 
-    function renderNTEView() {
-        // Принудительно получаем свежие данные перед рендером
-        const freshVlan = getVlan();
-        const freshOlt = getOlt();
-        const freshIp = getIpAndCdataNumber();
-
-        // Обновляем collectedData если нашли свежие данные
-        if (freshVlan) collectedData.vlan = freshVlan;
-        if (freshOlt) collectedData.olt = freshOlt;
-        if (freshIp.ip) collectedData.ip = freshIp.ip;
-        if (freshIp.cdataNumber) collectedData.cdataNumber = freshIp.cdataNumber;
-        if (!collectedData.olt && collectedData.ip) collectedData.olt = collectedData.ip;
-
-        // Получаем CDATA IP
-        const cdataIp = getCdataIp();
-
-        // Данные для отображения в зависимости от режима
-        let displayOlt, displayDesc;
-
-        if (nteMode === 'onu') {
-            // Для ONU: показываем CDATA IP и полный DESC
-            displayOlt = cdataIp || '❌ НЕ НАЙДЕН';
-            displayDesc = collectedData.combined || getDescWithoutContract() || '—';
-        } else {
-            // Для NTE: показываем обычный OLT и DESC без договора
-            displayOlt = collectedData.olt || '❌ НЕ НАЙДЕН';
-            displayDesc = getDescWithoutContract() || '—';
-        }
-
-        const currentVlan = collectedData.vlan || '';
-
-        console.log('📊 Рендер NTE/ONU View:', {
-            mode: nteMode,
-            desc: displayDesc,
-            olt: displayOlt,
-            vlan: currentVlan,
-            cdataIp: cdataIp
-        });
-
-        const savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
-        const savedMac = nteFormState.mac;
-        const savedProfile = nteFormState.profile;
-        const savedSN = onuFormState.sn;
-
-        return `
-            <style>
-                .nte-wizard {
-                    display: flex;
-                    flex-direction: row;
-                    flex-wrap: wrap;
-                    gap: 6px;
-                    align-items: flex-start;
-                }
-                .nte-card {
-                    background: #f8f9fa;
-                    border-radius: 8px;
-                    padding: 6px 10px;
-                    border: 1px solid #e0e0e0;
-                    flex: 1 1 auto;
-                    min-width: 0;
-                }
-                .nte-card-title {
-                    color: #FF9800;
-                    font-weight: 700;
-                    font-size: 9px;
-                    text-transform: uppercase;
-                    letter-spacing: 0.3px;
-                    margin-bottom: 2px;
-                }
-                .nte-card-value {
-                    font-size: 11px;
-                    font-weight: 600;
-                    font-family: 'SF Mono', monospace;
-                    word-break: break-all;
-                    color: #333;
-                }
-                .mode-switch {
-                    display: flex;
-                    background: #e0e0e0;
-                    border-radius: 6px;
-                    padding: 2px;
-                    gap: 2px;
-                }
-                .mode-btn {
-                    padding: 4px 12px;
-                    border: none;
-                    background: transparent;
-                    cursor: pointer;
-                    font-family: 'Orbitron', sans-serif;
-                    font-size: 10px;
-                    font-weight: 600;
-                    color: #666;
-                    border-radius: 5px;
-                    transition: all 0.2s;
-                    letter-spacing: 0.3px;
-                }
-                .mode-btn.active {
-                    background: white;
-                    color: #FF9800;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-                }
-                .mode-btn:hover:not(.active) {
-                    background: rgba(255,255,255,0.5);
-                }
-                .nte-radio-group {
-                    display: flex;
-                    gap: 10px;
-                }
-                .nte-radio-group label {
-                    display: flex;
-                    align-items: center;
-                    gap: 3px;
-                    cursor: pointer;
-                    font-size: 10px;
-                    white-space: nowrap;
-                }
-                .nte-input {
-                    padding: 4px 8px;
-                    border: 1px solid #ddd;
-                    border-radius: 5px;
-                    font-size: 10px;
-                    font-family: 'SF Mono', monospace;
-                    box-sizing: border-box;
-                    width: 100%;
-                }
-                .nte-input:focus {
-                    outline: none;
-                    border-color: #FF9800;
-                    box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.1);
-                }
-                .nte-select {
-                    padding: 4px 8px;
-                    border: 1px solid #ddd;
-                    border-radius: 5px;
-                    font-size: 10px;
-                    background: white;
-                    cursor: pointer;
-                    width: 100%;
-                }
-                .nte-select:focus {
-                    outline: none;
-                    border-color: #FF9800;
-                }
-                .nte-button-sm {
-                    background: linear-gradient(135deg, #FF9800, #F57C00);
-                    color: white;
-                    border: none;
-                    padding: 5px 12px;
-                    border-radius: 5px;
-                    font-size: 10px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    font-family: 'Orbitron', sans-serif;
-                    letter-spacing: 0.3px;
-                    transition: all 0.2s;
-                    white-space: nowrap;
-                }
-                .nte-button-sm:hover {
-                    background: linear-gradient(135deg, #F57C00, #E65100);
-                }
-                .nte-warning-sm {
-                    background: #fff3e0;
-                    border: 1px solid #ff9800;
-                    color: #e65100;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                    font-size: 9px;
-                    flex: 0 0 100%;
-                }
-                .preview-box {
-                    background: #f0f0f0;
-                    border-radius: 5px;
-                    padding: 6px 8px;
-                    font-family: 'SF Mono', monospace;
-                    font-size: 10px;
-                    white-space: pre-line;
-                    border: 1px solid #ddd;
-                    flex: 0 0 100%;
-                }
-                .nte-form-inline {
-                    display: flex;
-                    gap: 6px;
-                    align-items: center;
-                    flex-wrap: wrap;
-                }
-                .nte-form-inline > * {
-                    flex: 1 1 auto;
-                    min-width: 80px;
-                }
-                .nte-hint {
-                    font-size: 9px;
-                    color: #999;
-                    margin-top: 2px;
-                }
-                .nte-mac-preview {
-                    font-size: 10px;
-                    color: #FF9800;
-                    font-family: 'SF Mono', monospace;
-                }
-                .nte-profile-auto {
-                    background: #e8f5e9;
-                    color: #2e7d32;
-                    padding: 2px 6px;
-                    border-radius: 3px;
-                    font-size: 9px;
-                }
-            </style>
-
-            <div class="nte-wizard">
-                <!-- Верхняя строка: переключатель + статус + кнопка -->
-                <div style="display:flex; gap:6px; align-items:center; flex:0 0 100%;">
-                    <div class="mode-switch">
-                        <button class="mode-btn ${nteMode === 'nte' ? 'active' : ''}" id="mode-nte-btn">NTE</button>
-                        <button class="mode-btn ${nteMode === 'onu' ? 'active' : ''}" id="mode-onu-btn">ONU</button>
-                    </div>
-                    <div class="nte-radio-group" style="margin-left:4px;">
-                        <label>
-                            <input type="radio" name="nte-status" value="not_connected" ${savedStatus === 'not_connected' ? 'checked' : ''}>
-                            Не подкл.
-                        </label>
-                        <label>
-                            <input type="radio" name="nte-status" value="connected" ${savedStatus === 'connected' ? 'checked' : ''}>
-                            Подкл. (unconf.)
-                        </label>
-                    </div>
-                    <button class="nte-button-sm" id="nte-copy-config" style="margin-left:auto;">📋 Копировать</button>
-                </div>
-
-                <!-- Средняя строка: данные биллинга + форма -->
-                <div style="display:flex; gap:6px; flex:0 0 100%; align-items:stretch;">
-                    <!-- Данные из биллинга — 3 карточки в ряд -->
-                    <div class="nte-card" style="flex:2;">
-                        <div class="nte-card-title">DESC${nteMode === 'onu' ? ' (полн.)' : ''}</div>
-                        <div class="nte-card-value" style="font-size:10px;">${displayDesc}</div>
-                    </div>
-                    <div class="nte-card" style="flex:1;">
-                        <div class="nte-card-title">${nteMode === 'onu' ? 'CDATA IP' : 'OLT'}</div>
-                        <div class="nte-card-value" style="color:${displayOlt !== '❌ НЕ НАЙДЕН' ? '#4CAF50' : '#f44336'}">${displayOlt}</div>
-                    </div>
-                    <div class="nte-card" style="flex:0 0 60px;">
-                        <div class="nte-card-title">VLAN</div>
-                        <div class="nte-card-value" style="color:${currentVlan ? '#4CAF50' : '#f44336'}">${currentVlan || '❌'}</div>
-                    </div>
-
-                    <!-- Форма: заголовок + MAC/SN + профиль -->
-                    <div class="nte-card" style="flex:2;">
-                        <div class="nte-card-title" id="nte-form-title">${nteMode === 'nte' ? (savedStatus === 'not_connected' ? '➕ Новая НТЕ' : '✅ НТЕ подкл.') : '🔧 ONU'}</div>
-                        <div id="nte-form-content">
-                            <!-- Содержимое заполняется динамически через setupNTEEventListeners -->
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Предупреждение -->
-                ${(nteMode === 'nte' && (!collectedData.olt || !collectedData.vlan)) || (nteMode === 'onu' && (!cdataIp || !collectedData.vlan)) ? `
-                    <div class="nte-warning-sm">
-                        ⚠️ ${nteMode === 'onu' && !cdataIp ? 'CDATA IP не найден. ' : ''}${nteMode === 'nte' && !collectedData.olt ? 'OLT не найден. ' : ''}${!collectedData.vlan ? 'VLAN не найден. ' : ''}
-                    </div>
-                ` : ''}
-
-                <!-- Preview (скрыт по умолчанию) -->
-                <div id="nte-preview" class="preview-box" style="display: none;"></div>
-            </div>
-        `;
-    }
     // Добавить новую функцию конвертации раскладки
     function convertRussianToEnglish(text) {
         const russianToEnglishMap = {
@@ -998,352 +733,50 @@ Desc: ${desc || '—'}`;
         return text.split('').map(char => russianToEnglishMap[char] || char).join('');
     }
 
-    function setupNTEEventListeners() {
-        const statusRadios = document.querySelectorAll('input[name="nte-status"]');
-        const formTitle = document.getElementById('nte-form-title');
-        const formContent = document.getElementById('nte-form-content');
-        const previewBox = document.getElementById('nte-preview');
-
-        // Флаг для отслеживания фокуса на поле ввода
+    function setupBarInputHandlers() {
         let isInputFocused = false;
         let isSNFocused = false;
-        // Обработчики для переключателя режимов
-        const modeNteBtn = document.getElementById('mode-nte-btn');
-        const modeOnuBtn = document.getElementById('mode-onu-btn');
 
-        if (modeNteBtn) {
-            modeNteBtn.addEventListener('click', function() {
-                if (nteMode !== 'nte') {
-                    nteMode = 'nte';
-                    saveCurrentFormState();
-                    content.innerHTML = renderNTEView();
-                    setupNTEEventListeners();
-                }
-            });
-        }
-
-        if (modeOnuBtn) {
-            modeOnuBtn.addEventListener('click', function() {
-                if (nteMode !== 'onu') {
-                    nteMode = 'onu';
-                    saveCurrentFormState();
-                    content.innerHTML = renderNTEView();
-                    setupNTEEventListeners();
-                }
-            });
-        }
-
-        function saveCurrentFormState() {
-            if (nteMode === 'nte') {
+        // ===== Mode switch =====
+        document.getElementById('mode-nte-btn')?.addEventListener('click', function() {
+            if (nteMode !== 'nte') {
+                nteMode = 'nte';
                 saveNTEFormState();
-            } else {
+                renderBarContent();
+                setupBarInputHandlers();
+            }
+        });
+        document.getElementById('mode-onu-btn')?.addEventListener('click', function() {
+            if (nteMode !== 'onu') {
+                nteMode = 'onu';
                 saveONUFormState();
+                renderBarContent();
+                setupBarInputHandlers();
             }
-        }
+        });
 
-        function saveONUFormState() {
-            const snInput = document.getElementById('onu-sn-input');
-            if (snInput) {
-                onuFormState.sn = snInput.value;
-            }
-            const statusRadio = document.querySelector('input[name="nte-status"]:checked');
-            if (statusRadio) {
-                onuFormState.status = statusRadio.value;
-            }
-        }
-
-                function updatePreview() {
-                    let desc, olt, vlan;
-
-                    if (nteMode === 'onu') {
-                        desc = collectedData.combined || getDescWithoutContract() || '—';
-                        olt = getCdataIp() || '—';
-                        vlan = getVlan() || collectedData.vlan || '—';
-
-                        if (getVlan()) collectedData.vlan = getVlan();
-                        const cdataIp = getCdataIp();
-                        if (cdataIp) collectedData.olt = cdataIp;
-                    } else {
-                        desc = getDescWithoutContract() || '—';
-                        vlan = getVlan() || collectedData.vlan || '—';
-                        olt = getOlt() || collectedData.olt || collectedData.ip || '—';
-
-                        if (getVlan()) collectedData.vlan = getVlan();
-                        if (getOlt()) collectedData.olt = getOlt();
-                    }
-
-                    const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
-                    let selectedProfile = '';
-
-                    if (nteMode === 'nte' && selectedStatus === 'not_connected') {
-                        const profileSelect = document.getElementById('nte-profile-select');
-                        selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
-                    }
-
-                    let identifier = '';
-
-                    if (nteMode === 'onu') {
-                        const snInput = document.getElementById('onu-sn-input');
-                        if (snInput && snInput.value) {
-                            identifier = snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '');
-                        }
-                    } else {
-                        if (selectedStatus === 'not_connected') {
-                            const macInput = document.getElementById('nte-mac-input');
-                            if (macInput) {
-                                const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
-                                if (rawMac.length === 12) {
-                                    identifier = formatMAC(rawMac);
-                                } else if (macInput.value) {
-                                    identifier = macInput.value;
-                                }
-                            }
-                        }
-                    }
-
-                    previewBox.style.display = 'block';
-
-                    if (nteMode === 'onu') {
-                        previewBox.innerHTML = `<strong>Предпросмотр (ONU):</strong>
-SN: ${identifier || '—'}
-CDATA IP: ${olt}
-Vlan: ${vlan}
-Desc: ${desc}`;
-                    } else {
-                        let profileLine = '';
-                        if (selectedStatus === 'not_connected') {
-                            profileLine = `\nProfile: ${selectedProfile}`;
-                        }
-
-                        previewBox.innerHTML = `<strong>Предпросмотр (NTE):</strong>
-MAC: ${identifier || '—'}${profileLine}
-OLT: ${olt}
-Vlan: ${vlan}
-Desc: ${desc}`;
-                    }
-                }
-
-                function updateForm() {
-            if (nteMode === 'onu') {
-                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
-                onuFormState.status = selectedStatus;
-
-                if (selectedStatus === 'not_connected') {
-                    formTitle.textContent = '➕ Новая ONU';
-                    formContent.innerHTML = `
-                        <div class="nte-form-inline">
-                            <input type="text" id="onu-sn-input" class="nte-input" placeholder="SN (12 символов)" maxlength="12" value="${onuFormState.sn}" style="flex:1;">
-                            <div id="onu-sn-preview" class="nte-mac-preview" style="flex:0 0 auto;"></div>
-                        </div>
-                    `;
-
-                    const snInput = document.getElementById('onu-sn-input');
-                    const snPreview = document.getElementById('onu-sn-preview');
-
-                    snInput.addEventListener('focus', () => {
-                        isSNFocused = true;
-                    });
-                    snInput.addEventListener('blur', () => {
-                        setTimeout(() => { isSNFocused = false; }, 200);
-                    });
-
-                    function updateSNPreview() {
-                        let sn = snInput.value;
-                        const convertedSN = convertRussianToEnglish(sn);
-                        if (convertedSN !== sn) {
-                            snInput.value = convertedSN;
-                            sn = convertedSN;
-                        }
-                        sn = sn.toUpperCase();
-                        if (sn !== snInput.value) {
-                            snInput.value = sn;
-                        }
-                        const cleanSN = sn.replace(/[^0-9A-Z]/g, '');
-                        if (cleanSN.length > 0) {
-                            snPreview.textContent = cleanSN;
-                            if (cleanSN.length === 12) {
-                                snPreview.style.color = '#4CAF50';
-                                snPreview.textContent = `✅ SN: ${cleanSN}`;
-                            } else {
-                                snPreview.style.color = '#FF9800';
-                            }
-                        } else {
-                            snPreview.textContent = '';
-                        }
-                        onuFormState.sn = snInput.value;
-                        updatePreview();
-                    }
-
-                    snInput.addEventListener('input', updateSNPreview);
-                    snInput.addEventListener('paste', (e) => {
-                        setTimeout(updateSNPreview, 50);
-                    });
-                    updateSNPreview();
-                } else {
-                    formTitle.textContent = '✅ ONU подкл.';
-                    formContent.innerHTML = `
-                        <div style="background: #e3f2fd; padding: 6px 8px; border-radius: 4px;">
-                            <div style="font-size: 10px; color: #1976D2;">
-                                💡 ONU будет найдена и настроена автоматически
-                            </div>
-                        </div>
-                    `;
-                }
-            } else {
-                // Режим NTE
-                const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
-                nteFormState.status = selectedStatus;
-
-                if (selectedStatus === 'not_connected') {
-                    formTitle.textContent = '➕ Новая НТЕ';
-                    formContent.innerHTML = `
-                        <div class="nte-form-inline">
-                            <input type="text" id="nte-mac-input" class="nte-input" placeholder="MAC" maxlength="17" value="${nteFormState.mac}" style="flex:1;">
-                            <select id="nte-profile-select" class="nte-select" style="flex:1.5;">
-                                ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div style="display:flex; gap:6px; align-items:center; margin-top:2px;">
-                            <div id="nte-mac-preview" class="nte-mac-preview"></div>
-                            <div id="nte-profile-hint" class="nte-profile-auto"></div>
-                        </div>
-                    `;
-
-                    const macInput = document.getElementById('nte-mac-input');
-                    const macPreview = document.getElementById('nte-mac-preview');
-                    const profileHint = document.getElementById('nte-profile-hint');
-                    const profileSelect = document.getElementById('nte-profile-select');
-
-                    macInput.addEventListener('focus', () => { isInputFocused = true; });
-                    macInput.addEventListener('blur', () => {
-                        setTimeout(() => { isInputFocused = false; }, 200);
-                    });
-
-                    function updateMacPreview() {
-                        let mac = macInput.value;
-                        const convertedMac = convertRussianToEnglish(mac);
-                        if (convertedMac !== mac) {
-                            macInput.value = convertedMac;
-                            mac = convertedMac;
-                        }
-                        mac = mac.toUpperCase();
-                        if (mac !== macInput.value) {
-                            macInput.value = mac;
-                        }
-                        const rawMac = mac.replace(/[^0-9A-F]/g, '');
-                        if (rawMac.length >= 2) {
-                            const formatted = rawMac.match(/.{1,2}/g).join(':');
-                            macPreview.textContent = `Формат: ${formatted}`;
-                        } else {
-                            macPreview.textContent = rawMac ? 'Введите MAC' : '';
-                        }
-                        if (rawMac.length === 12) {
-                            macPreview.style.color = '#4CAF50';
-                            macPreview.textContent = `✅ MAC: ${formatMAC(rawMac)}`;
-                            if (!nteFormState.profileAutoDetected) {
-                                const detectedProfile = detectProfileByMAC(mac);
-                                if (detectedProfile) {
-                                    profileSelect.value = detectedProfile;
-                                    nteFormState.profile = detectedProfile;
-                                    nteFormState.profileAutoDetected = true;
-                                    let profileName = detectedProfile === 'NTE-2-VPU' ? 'NTE-2 (ICT)' : 'NTE-RG (ZTE)';
-                                    profileHint.textContent = `🔍 Автоматически определен профиль: ${profileName}`;
-                                    profileHint.style.cssText = 'background: #e8f5e9; color: #2e7d32; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
-                                } else {
-                                    profileHint.textContent = '⚠️ MAC не распознан, выберите профиль вручную';
-                                    profileHint.style.cssText = 'background: #fff3e0; color: #e65100; padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;';
-                                }
-                            }
-                        } else if (rawMac.length > 0) {
-                            macPreview.style.color = '#FF9800';
-                            profileHint.textContent = '';
-                            nteFormState.profileAutoDetected = false;
-                        }
-                        nteFormState.mac = macInput.value;
-                        updatePreview();
-                    }
-
-                    macInput.addEventListener('input', updateMacPreview);
-                    macInput.addEventListener('paste', (e) => {
-                        setTimeout(updateMacPreview, 50);
-                    });
-                    updateMacPreview();
-
-                    profileSelect.addEventListener('change', function() {
-                        nteFormState.profile = this.value;
-                        nteFormState.profileAutoDetected = false;
-                        updatePreview();
-                    });
-
-                } else {
-                    formTitle.textContent = '✅ НТЕ подкл.';
-                    formContent.innerHTML = `
-                        <div style="background: #e3f2fd; padding: 6px 8px; border-radius: 4px;">
-                            <div style="font-size: 10px; color: #1976D2;">
-                                💡 НТЕ будет найдена и настроена автоматически
-                            </div>
-                        </div>
-                    `;
-                }
-            }
-
-            updatePreview();
-        }
-
-        // Обработчики для статуса NTE
-        if (statusRadios.length > 0) {
-            statusRadios.forEach(radio => {
-                radio.addEventListener('change', updateForm);
+        // ===== Status radio =====
+        document.querySelectorAll('input[name="nte-status"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                updateBarForm();
+                setupBarInputHandlers();
             });
-        }
+        });
 
-        updateForm();
-                function getCurrentFormData() {
-                    if (nteMode === 'onu') {
-                        const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+        // ===== MAC / SN handlers =====
+        attachMacInputHandlers();
+        attachSNInputHandlers();
 
-                        if (selectedStatus === 'not_connected') {
-                            const snInput = document.getElementById('onu-sn-input');
-                            const sn = snInput ? snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+        // ===== Profile select =====
+        document.getElementById('nte-profile-select')?.addEventListener('change', function() {
+            nteFormState.profile = this.value;
+            nteFormState.profileAutoDetected = false;
+        });
 
-                            if (sn.length !== 12) {
-                                showNotification('❌ SN должен содержать 12 символов', 'error');
-                                return null;
-                            }
-
-                            return { mode: 'onu', status: selectedStatus, sn: sn };
-                        }
-
-                        return { mode: 'onu', status: selectedStatus, sn: '' };
-                    } else {
-                        const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
-                        let macAddress = '';
-                        let selectedProfile = '';
-
-                        if (selectedStatus === 'not_connected') {
-                            const macInput = document.getElementById('nte-mac-input');
-                            const rawMac = macInput.value.replace(/[^0-9A-F]/g, '');
-
-                            if (rawMac.length !== 12) {
-                                showNotification('❌ Введите корректный MAC-адрес (12 символов)', 'error');
-                                return null;
-                            }
-
-                            macAddress = formatMAC(rawMac);
-
-                            const profileSelect = document.getElementById('nte-profile-select');
-                            selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
-                        }
-
-                        return { mode: 'nte', status: selectedStatus, mac: macAddress, profile: selectedProfile };
-                    }
-                }
-
-
-        document.getElementById('nte-copy-config').addEventListener('click', function() {
-            const data = getCurrentFormData();
+        // ===== Copy button =====
+        document.getElementById('nte-copy-config')?.addEventListener('click', function() {
+            var data = getBarFormData();
             if (!data) return;
-
             if (data.mode === 'onu') {
                 copyONUConfig(data.sn, data.status);
             } else {
@@ -1351,9 +784,136 @@ Desc: ${desc}`;
             }
         });
 
-        // Сохраняем флаг в глобальную переменную для доступа из updateCollectedData
-        window.nteInputFocused = () => isInputFocused;
-        window.isSNInputFocused = () => isSNFocused;
+        window.nteInputFocused = function() { return isInputFocused; };
+        window.isSNInputFocused = function() { return isSNFocused; };
+
+        function attachMacInputHandlers() {
+            var macInput = document.getElementById('nte-mac-input');
+            if (!macInput) return;
+
+            macInput.addEventListener('focus', function() { isInputFocused = true; });
+            macInput.addEventListener('blur', function() {
+                setTimeout(function() { isInputFocused = false; }, 200);
+            });
+
+            function updateMacPreview() {
+                var mac = macInput.value;
+                var convertedMac = convertRussianToEnglish(mac);
+                if (convertedMac !== mac) { macInput.value = convertedMac; mac = convertedMac; }
+                mac = mac.toUpperCase();
+                if (mac !== macInput.value) { macInput.value = mac; }
+                var rawMac = mac.replace(/[^0-9A-F]/g, '');
+                var macPreview = document.getElementById('nte-mac-preview');
+                var profileHint = document.getElementById('nte-profile-hint');
+                var profileSelect = document.getElementById('nte-profile-select');
+
+                if (rawMac.length >= 2) {
+                    var formatted = rawMac.match(/.{1,2}/g).join(':');
+                    if (macPreview) macPreview.textContent = 'Формат: ' + formatted;
+                } else {
+                    if (macPreview) macPreview.textContent = rawMac ? 'Введите MAC' : '';
+                }
+                if (rawMac.length === 12) {
+                    if (macPreview) { macPreview.style.color = '#4CAF50'; macPreview.textContent = '✅ MAC: ' + formatMAC(rawMac); }
+                    if (!nteFormState.profileAutoDetected && profileSelect) {
+                        var detected = detectProfileByMAC(mac);
+                        if (detected) {
+                            profileSelect.value = detected;
+                            nteFormState.profile = detected;
+                            nteFormState.profileAutoDetected = true;
+                            if (profileHint) profileHint.textContent = '🔍 Авто: ' + (detected === 'NTE-2-VPU' ? 'NTE-2 (ICT)' : 'NTE-RG (ZTE)');
+                        } else {
+                            if (profileHint) profileHint.textContent = '⚠️ Выберите профиль';
+                        }
+                    }
+                } else if (rawMac.length > 0) {
+                    if (macPreview) macPreview.style.color = '#FF9800';
+                    if (profileHint) profileHint.textContent = '';
+                    nteFormState.profileAutoDetected = false;
+                }
+                nteFormState.mac = macInput.value;
+            }
+
+            macInput.addEventListener('input', updateMacPreview);
+            macInput.addEventListener('paste', function() { setTimeout(updateMacPreview, 50); });
+            updateMacPreview();
+
+            var profileSelect = document.getElementById('nte-profile-select');
+            if (profileSelect) {
+                profileSelect.addEventListener('change', function() {
+                    nteFormState.profile = this.value;
+                    nteFormState.profileAutoDetected = false;
+                });
+            }
+        }
+
+        function attachSNInputHandlers() {
+            var snInput = document.getElementById('onu-sn-input');
+            if (!snInput) return;
+
+            snInput.addEventListener('focus', function() { isSNFocused = true; });
+            snInput.addEventListener('blur', function() {
+                setTimeout(function() { isSNFocused = false; }, 200);
+            });
+
+            function updateSNPreview() {
+                var sn = snInput.value;
+                var convertedSN = convertRussianToEnglish(sn);
+                if (convertedSN !== sn) { snInput.value = convertedSN; sn = convertedSN; }
+                sn = sn.toUpperCase();
+                if (sn !== snInput.value) { snInput.value = sn; }
+                var cleanSN = sn.replace(/[^0-9A-Z]/g, '');
+                var snPreview = document.getElementById('onu-sn-preview');
+                if (!snPreview) return;
+                if (cleanSN.length > 0) {
+                    snPreview.textContent = cleanSN;
+                    if (cleanSN.length === 12) {
+                        snPreview.style.color = '#4CAF50';
+                        snPreview.textContent = '✅ SN: ' + cleanSN;
+                    } else { snPreview.style.color = '#FF9800'; }
+                } else { snPreview.textContent = ''; }
+                onuFormState.sn = snInput.value;
+            }
+
+            snInput.addEventListener('input', updateSNPreview);
+            snInput.addEventListener('paste', function() { setTimeout(updateSNPreview, 50); });
+            updateSNPreview();
+        }
+
+        function getBarFormData() {
+            if (nteMode === 'onu') {
+                var sel = document.querySelector('input[name="nte-status"]:checked');
+                var status = sel ? sel.value : 'not_connected';
+                if (status === 'not_connected') {
+                    var snInput = document.getElementById('onu-sn-input');
+                    var sn = snInput ? snInput.value.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+                    if (sn.length !== 12) { showNotification('❌ SN должен содержать 12 символов', 'error'); return null; }
+                    return { mode: 'onu', status: status, sn: sn };
+                }
+                return { mode: 'onu', status: status, sn: '' };
+            } else {
+                var sel = document.querySelector('input[name="nte-status"]:checked');
+                var status = sel ? sel.value : 'not_connected';
+                var macAddress = '';
+                var selectedProfile = '';
+                if (status === 'not_connected') {
+                    var macInput = document.getElementById('nte-mac-input');
+                    var rawMac = macInput ? macInput.value.replace(/[^0-9A-F]/g, '') : '';
+                    if (rawMac.length !== 12) { showNotification('❌ Введите корректный MAC-адрес', 'error'); return null; }
+                    macAddress = formatMAC(rawMac);
+                    var profileSelect = document.getElementById('nte-profile-select');
+                    selectedProfile = profileSelect ? profileSelect.value : nteFormState.profile;
+                }
+                return { mode: 'nte', status: status, mac: macAddress, profile: selectedProfile };
+            }
+        }
+
+        function saveONUFormState() {
+            var snInput = document.getElementById('onu-sn-input');
+            if (snInput) onuFormState.sn = snInput.value;
+            var statusRadio = document.querySelector('input[name="nte-status"]:checked');
+            if (statusRadio) onuFormState.status = statusRadio.value;
+        }
     }
                 function copyONUConfig(sn, status) {
                     const desc = collectedData.combined || getDescWithoutContract() || '—';
@@ -1416,15 +976,12 @@ Desc: ${desc || '—'}`;
 
         if (!content) return;
 
-        const ntePanel = document.getElementById('nte-panel');
-        if (!ntePanel || ntePanel.style.display === 'none') return;
-
         if (currentView === 'nte-wizard') {
             if (dataChanged) {
                 saveNTEFormState();
-                content.innerHTML = renderNTEView();
-                setupNTEEventListeners();
-                console.log('🔄 NTE Wizard обновлен из updateContent');
+                renderBarContent();
+                setupBarInputHandlers();
+                console.log('🔄 NTE Bar обновлен из updateContent');
             }
         }
     }
@@ -1432,31 +989,12 @@ Desc: ${desc || '—'}`;
     function createWindow() {
         if (document.getElementById('timernet-container')) return;
 
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes nteSlideUp {
-                from { transform: translateY(100%); opacity: 0; }
-                to { transform: translateY(0); opacity: 1; }
-            }
-            @keyframes nteSlideDown {
-                from { transform: translateY(0); opacity: 1; }
-                to { transform: translateY(100%); opacity: 0; }
-            }
-            .nte-panel-open {
-                animation: nteSlideUp 0.25s ease forwards;
-            }
-            .nte-panel-close {
-                animation: nteSlideDown 0.2s ease forwards;
-            }
-        `;
-        document.head.appendChild(style);
-
         const fontLink = document.createElement('link');
         fontLink.href = 'https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700&display=swap';
         fontLink.rel = 'stylesheet';
         document.head.appendChild(fontLink);
 
-        // ========== НИЖНЯЯ ПАНЕЛЬ (bottomBar) ==========
+        // ========== НИЖНЯЯ ПОЛОСА (72px, белый фон) ==========
         container = document.createElement('div');
         container.id = 'timernet-container';
         container.style.cssText = `
@@ -1466,194 +1004,97 @@ Desc: ${desc || '—'}`;
             width: 100%;
             height: 72px;
             z-index: 999999;
-            background: linear-gradient(135deg, #1a237e, #283593);
+            background: #ffffff;
             display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            justify-content: center;
-            padding-left: 16px;
-            gap: 6px;
-            box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
+            flex-direction: row;
+            align-items: center;
+            padding: 4px 8px;
+            gap: 8px;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
             font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             box-sizing: border-box;
+            border-top: 1px solid #e0e0e0;
         `;
 
-        // Кнопка 🚀
+        // ========== ЛЕВАЯ КОЛОНКА: кнопки стопкой ==========
+        const leftCol = document.createElement('div');
+        leftCol.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex-shrink: 0;
+        `;
+
         const rocketBtn = document.createElement('button');
-        rocketBtn.textContent = '🚀 Расширение';
+        rocketBtn.textContent = '🚀 Расш.';
         rocketBtn.style.cssText = `
             background: linear-gradient(135deg, #9C27B0, #7B1FA2);
             color: white;
             border: none;
-            padding: 4px 16px;
-            border-radius: 6px;
-            font-size: 12px;
+            padding: 2px 12px;
+            border-radius: 4px;
+            font-size: 10px;
             font-weight: 600;
             font-family: 'Orbitron', sans-serif;
             cursor: pointer;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
             transition: all 0.2s ease;
-            height: 28px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            height: 24px;
+            white-space: nowrap;
         `;
         rocketBtn.onmouseover = () => { rocketBtn.style.background = 'linear-gradient(135deg, #7B1FA2, #6A1B9A)'; };
         rocketBtn.onmouseout = () => { rocketBtn.style.background = 'linear-gradient(135deg, #9C27B0, #7B1FA2)'; };
         rocketBtn.onclick = findAndLaunchExtension;
 
-        // Кнопка NTE
         const nteBtn = document.createElement('button');
-        nteBtn.textContent = '⚙️ NTE/ONU';
+        nteBtn.textContent = '⚙️ NTE';
         nteBtn.style.cssText = `
             background: linear-gradient(135deg, #FF9800, #F57C00);
             color: white;
             border: none;
-            padding: 4px 16px;
-            border-radius: 6px;
-            font-size: 12px;
+            padding: 2px 12px;
+            border-radius: 4px;
+            font-size: 10px;
             font-weight: 600;
             font-family: 'Orbitron', sans-serif;
             cursor: pointer;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.3px;
             transition: all 0.2s ease;
-            height: 28px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            height: 24px;
+            white-space: nowrap;
         `;
         nteBtn.onmouseover = () => { nteBtn.style.background = 'linear-gradient(135deg, #F57C00, #E65100)'; };
         nteBtn.onmouseout = () => { nteBtn.style.background = 'linear-gradient(135deg, #FF9800, #F57C00)'; };
 
-        container.appendChild(rocketBtn);
-        container.appendChild(nteBtn);
-        document.body.appendChild(container);
+        leftCol.appendChild(rocketBtn);
+        leftCol.appendChild(nteBtn);
 
-        // ========== NTE ПАНЕЛЬ (выезжает снизу) ==========
-        const ntePanel = document.createElement('div');
-        ntePanel.id = 'nte-panel';
-        ntePanel.style.cssText = `
-            position: fixed;
-            bottom: 72px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 520px;
-            max-height: 320px;
-            background: white;
-            border-radius: 12px 12px 0 0;
-            box-shadow: 0 -4px 24px rgba(0,0,0,0.25);
-            font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 12px;
-            color: #2c3e50;
-            z-index: 999998;
-            display: none;
-            overflow: hidden;
-            flex-direction: column;
-        `;
-
-        // Заголовок NTE панели
-        const ntePanelHeader = document.createElement('div');
-        ntePanelHeader.style.cssText = `
-            background: linear-gradient(135deg, #FF9800, #F57C00);
-            padding: 8px 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0;
-        `;
-
-        const ntePanelTitle = document.createElement('span');
-        ntePanelTitle.innerHTML = '⚙️ НАСТРОЙКА NTE/ONU';
-        ntePanelTitle.style.cssText = `
-            font-family: 'Orbitron', sans-serif;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            color: white;
-            text-shadow: 0 1px 4px rgba(0,0,0,0.2);
-        `;
-
-        const ntePanelClose = document.createElement('button');
-        ntePanelClose.innerHTML = '×';
-        ntePanelClose.style.cssText = `
-            background: rgba(255,255,255,0.2);
-            border: none;
-            font-size: 18px;
-            font-weight: 500;
-            cursor: pointer;
-            color: white;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            transition: all 0.2s ease;
-            padding: 0;
-            line-height: 1;
-        `;
-        ntePanelClose.onmouseover = () => {
-            ntePanelClose.style.transform = 'scale(1.1)';
-            ntePanelClose.style.background = 'rgba(244, 67, 54, 0.4)';
-        };
-        ntePanelClose.onmouseout = () => {
-            ntePanelClose.style.transform = 'scale(1)';
-            ntePanelClose.style.background = 'rgba(255,255,255,0.2)';
-        };
-
-        ntePanelHeader.appendChild(ntePanelTitle);
-        ntePanelHeader.appendChild(ntePanelClose);
-        ntePanel.appendChild(ntePanelHeader);
-
-        // Контент NTE панели (переиспользуем переменную content)
-        content = document.createElement('div');
-        content.id = 'nte-panel-content';
-        content.style.cssText = `
-            padding: 12px 14px;
-            overflow-y: auto;
+        // ========== ПРАВАЯ ЧАСТЬ: контент NTE/ONU ==========
+        const rightArea = document.createElement('div');
+        rightArea.id = 'nte-right-area';
+        rightArea.style.cssText = `
             flex: 1;
-            background: #fafafa;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+            overflow: hidden;
         `;
 
-        ntePanel.appendChild(content);
-        document.body.appendChild(ntePanel);
+        content = document.createElement('div');
+        content.id = 'nte-bar-content';
+        content.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 100%;
+        `;
 
-        // ========== ЛОГИКА ОТКРЫТИЯ/ЗАКРЫТИЯ ==========
-        let ntePanelVisible = false;
+        rightArea.appendChild(content);
 
-        function showNtePanel() {
-            if (ntePanelVisible) return;
-            ntePanelVisible = true;
-            ntePanel.style.display = 'flex';
-            ntePanel.classList.remove('nte-panel-close');
-            ntePanel.classList.add('nte-panel-open');
-
-            // Загружаем данные и рендерим
-            currentView = 'nte-wizard';
-            initData();
-            content.innerHTML = renderNTEView();
-            setupNTEEventListeners();
-        }
-
-        function hideNtePanel() {
-            if (!ntePanelVisible) return;
-            ntePanel.classList.remove('nte-panel-open');
-            ntePanel.classList.add('nte-panel-close');
-            setTimeout(() => {
-                ntePanel.style.display = 'none';
-                ntePanelVisible = false;
-            }, 200);
-        }
-
-        nteBtn.onclick = function() {
-            if (ntePanelVisible) {
-                hideNtePanel();
-            } else {
-                showNtePanel();
-            }
-        };
-
-        ntePanelClose.onclick = hideNtePanel;
+        container.appendChild(leftCol);
+        container.appendChild(rightArea);
+        document.body.appendChild(container);
 
         // ========== ИНИЦИАЛИЗАЦИЯ ДАННЫХ ==========
         function initData() {
@@ -1691,10 +1132,238 @@ Desc: ${desc || '—'}`;
 
         initData();
 
-        // Сразу показываем NTE панель при загрузке
-        showNtePanel();
+        // Рендерим NTE контент в правую часть
+        currentView = 'nte-wizard';
+        renderBarContent();
+        setupBarInputHandlers();
 
         setInterval(updateContent, 2000);
+    }
+
+    function renderBarContent() {
+        if (!content) return;
+
+        // Принудительно получаем свежие данные
+        const freshVlan = getVlan();
+        const freshOlt = getOlt();
+        const freshIp = getIpAndCdataNumber();
+        if (freshVlan) collectedData.vlan = freshVlan;
+        if (freshOlt) collectedData.olt = freshOlt;
+        if (freshIp.ip) collectedData.ip = freshIp.ip;
+        if (freshIp.cdataNumber) collectedData.cdataNumber = freshIp.cdataNumber;
+        if (!collectedData.olt && collectedData.ip) collectedData.olt = collectedData.ip;
+
+        const cdataIp = getCdataIp();
+        let displayOlt, displayDesc;
+        if (nteMode === 'onu') {
+            displayOlt = cdataIp || '❌ НЕ НАЙДЕН';
+            displayDesc = collectedData.combined || '—';
+        } else {
+            displayOlt = collectedData.olt || '❌ НЕ НАЙДЕН';
+            displayDesc = getDescWithoutContract() || '—';
+        }
+        const currentVlan = collectedData.vlan || '';
+        const savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
+        const savedProfile = nteFormState.profile;
+        const savedSN = onuFormState.sn;
+
+        content.innerHTML = `
+            <style>
+                #nte-bar-content .bar-row1 {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                }
+                #nte-bar-content .bar-row2 {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                }
+                #nte-bar-content .bar-mode {
+                    display: flex;
+                    background: #e0e0e0;
+                    border-radius: 4px;
+                    padding: 1px;
+                    gap: 1px;
+                }
+                #nte-bar-content .bar-mode-btn {
+                    padding: 1px 8px;
+                    border: none;
+                    background: transparent;
+                    cursor: pointer;
+                    font-family: 'Orbitron', sans-serif;
+                    font-size: 9px;
+                    font-weight: 600;
+                    color: #666;
+                    border-radius: 3px;
+                    transition: all 0.2s;
+                    letter-spacing: 0.2px;
+                }
+                #nte-bar-content .bar-mode-btn.active {
+                    background: white;
+                    color: #FF9800;
+                    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+                }
+                #nte-bar-content .bar-mode-btn:hover:not(.active) {
+                    background: rgba(255,255,255,0.5);
+                }
+                #nte-bar-content .bar-radio {
+                    display: flex;
+                    gap: 6px;
+                    align-items: center;
+                }
+                #nte-bar-content .bar-radio label {
+                    display: flex;
+                    align-items: center;
+                    gap: 2px;
+                    cursor: pointer;
+                    font-size: 9px;
+                    white-space: nowrap;
+                    color: #333;
+                }
+                #nte-bar-content .bar-input {
+                    padding: 2px 6px;
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    font-size: 9px;
+                    font-family: 'SF Mono', monospace;
+                    height: 20px;
+                    box-sizing: border-box;
+                }
+                #nte-bar-content .bar-input:focus {
+                    outline: none;
+                    border-color: #FF9800;
+                }
+                #nte-bar-content .bar-select {
+                    padding: 2px 4px;
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    font-size: 9px;
+                    background: white;
+                    height: 20px;
+                    box-sizing: border-box;
+                }
+                #nte-bar-content .bar-data {
+                    font-size: 9px;
+                    font-family: 'SF Mono', monospace;
+                    color: #333;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                #nte-bar-content .bar-data-label {
+                    font-size: 8px;
+                    color: #999;
+                    font-weight: 600;
+                    font-family: 'Orbitron', sans-serif;
+                    letter-spacing: 0.3px;
+                }
+                #nte-bar-content .bar-copy {
+                    background: linear-gradient(135deg, #FF9800, #F57C00);
+                    color: white;
+                    border: none;
+                    padding: 2px 10px;
+                    border-radius: 3px;
+                    font-size: 9px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    font-family: 'Orbitron', sans-serif;
+                    letter-spacing: 0.3px;
+                    transition: all 0.2s;
+                    height: 20px;
+                    white-space: nowrap;
+                }
+                #nte-bar-content .bar-copy:hover {
+                    background: linear-gradient(135deg, #F57C00, #E65100);
+                }
+                #nte-bar-content .bar-hint {
+                    font-size: 8px;
+                    color: #999;
+                }
+                #nte-bar-content .bar-mac-preview {
+                    font-size: 9px;
+                    color: #FF9800;
+                    font-family: 'SF Mono', monospace;
+                }
+            </style>
+
+            <!-- Строка 1: NTE|ONU + статус + форма -->
+            <div class="bar-row1">
+                <div class="bar-mode">
+                    <button class="bar-mode-btn ${nteMode === 'nte' ? 'active' : ''}" id="mode-nte-btn">NTE</button>
+                    <button class="bar-mode-btn ${nteMode === 'onu' ? 'active' : ''}" id="mode-onu-btn">ONU</button>
+                </div>
+
+                <div class="bar-radio" id="bar-status-group">
+                    <label>
+                        <input type="radio" name="nte-status" value="not_connected" ${savedStatus === 'not_connected' ? 'checked' : ''}>
+                        Не подкл.
+                    </label>
+                    <label>
+                        <input type="radio" name="nte-status" value="connected" ${savedStatus === 'connected' ? 'checked' : ''}>
+                        Подкл.
+                    </label>
+                </div>
+
+                <span id="bar-form-fields" style="display:flex; gap:4px; align-items:center;"></span>
+            </div>
+
+            <!-- Строка 2: данные из биллинга + кнопка копировать -->
+            <div class="bar-row2">
+                <span class="bar-data-label">DESC:</span>
+                <span class="bar-data" style="flex:1; max-width:200px;" title="${displayDesc}">${displayDesc}</span>
+
+                <span class="bar-data-label" style="margin-left:4px;">${nteMode === 'onu' ? 'CDATA' : 'OLT'}:</span>
+                <span class="bar-data" style="color:${displayOlt !== '❌ НЕ НАЙДЕН' ? '#4CAF50' : '#f44336'}">${displayOlt}</span>
+
+                <span class="bar-data-label" style="margin-left:4px;">VLAN:</span>
+                <span class="bar-data" style="color:${currentVlan ? '#4CAF50' : '#f44336'}">${currentVlan || '❌'}</span>
+
+                <button class="bar-copy" id="nte-copy-config" style="margin-left:auto;">📋 Коп.</button>
+            </div>
+
+            <div id="nte-preview" style="display:none;"></div>
+        `;
+
+        // После рендера заполняем форму
+        updateBarForm();
+    }
+
+    // Заполняет форму (MAC/SN + профиль) внутри bar-row1
+    function updateBarForm() {
+        const formFields = document.getElementById('bar-form-fields');
+        if (!formFields) return;
+
+        const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+
+        if (nteMode === 'onu') {
+            if (selectedStatus === 'not_connected') {
+                formFields.innerHTML = `
+                    <input type="text" id="onu-sn-input" class="bar-input" placeholder="SN" maxlength="12" value="${onuFormState.sn}" style="width:100px;">
+                    <span id="onu-sn-preview" class="bar-mac-preview"></span>
+                `;
+            } else {
+                formFields.innerHTML = `<span style="font-size:9px;color:#1976D2;">✅ Настроится авто</span>`;
+            }
+        } else {
+            if (selectedStatus === 'not_connected') {
+                formFields.innerHTML = `
+                    <input type="text" id="nte-mac-input" class="bar-input" placeholder="MAC" maxlength="17" value="${nteFormState.mac}" style="width:110px;">
+                    <select id="nte-profile-select" class="bar-select" style="width:130px;">
+                        ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
+                    </select>
+                    <span id="nte-mac-preview" class="bar-mac-preview"></span>
+                    <span id="nte-profile-hint" class="bar-hint"></span>
+                `;
+            } else {
+                formFields.innerHTML = `<span style="font-size:9px;color:#1976D2;">✅ Настроится авто</span>`;
+            }
+        }
+
+        // Переустанавливаем обработчики после обновления HTML
+        setupBarInputHandlers();
     }
 
     function init() {
