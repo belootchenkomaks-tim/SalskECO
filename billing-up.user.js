@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.1
+// @version      10.2
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
