@@ -1164,205 +1164,135 @@ Desc: ${desc || '—'}`;
         }
         const currentVlan = collectedData.vlan || '';
         const savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
-        const savedProfile = nteFormState.profile;
-        const savedSN = onuFormState.sn;
+        const selectedMac = nteFormState.mac;
+        const selectedProfile = nteFormState.profile;
+        const selectedSN = onuFormState.sn;
 
-        content.innerHTML = `
-            <style>
-                #nte-bar-content .bar-row1 {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    flex-wrap: wrap;
-                }
-                #nte-bar-content .bar-row2 {
-                    display: flex;
-                    align-items: center;
-                    gap: 6px;
-                    flex-wrap: wrap;
-                }
-                #nte-bar-content .bar-mode {
-                    display: flex;
-                    background: #e0e0e0;
-                    border-radius: 4px;
-                    padding: 1px;
-                    gap: 1px;
-                }
-                #nte-bar-content .bar-mode-btn {
-                    padding: 1px 8px;
-                    border: none;
-                    background: transparent;
-                    cursor: pointer;
-                    font-family: 'Orbitron', sans-serif;
-                    font-size: 9px;
-                    font-weight: 600;
-                    color: #666;
-                    border-radius: 3px;
-                    transition: all 0.2s;
-                    letter-spacing: 0.2px;
-                }
-                #nte-bar-content .bar-mode-btn.active {
-                    background: white;
-                    color: #FF9800;
-                    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-                }
-                #nte-bar-content .bar-mode-btn:hover:not(.active) {
-                    background: rgba(255,255,255,0.5);
-                }
-                #nte-bar-content .bar-radio {
-                    display: flex;
-                    gap: 6px;
-                    align-items: center;
-                }
-                #nte-bar-content .bar-radio label {
-                    display: flex;
-                    align-items: center;
-                    gap: 2px;
-                    cursor: pointer;
-                    font-size: 9px;
-                    white-space: nowrap;
-                    color: #333;
-                }
-                #nte-bar-content .bar-input {
-                    padding: 2px 6px;
-                    border: 1px solid #ccc;
-                    border-radius: 3px;
-                    font-size: 9px;
-                    font-family: 'SF Mono', monospace;
-                    height: 20px;
-                    box-sizing: border-box;
-                }
-                #nte-bar-content .bar-input:focus {
-                    outline: none;
-                    border-color: #FF9800;
-                }
-                #nte-bar-content .bar-select {
-                    padding: 2px 4px;
-                    border: 1px solid #ccc;
-                    border-radius: 3px;
-                    font-size: 9px;
-                    background: white;
-                    height: 20px;
-                    box-sizing: border-box;
-                }
-                #nte-bar-content .bar-data {
-                    font-size: 9px;
-                    font-family: 'SF Mono', monospace;
-                    color: #333;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                }
-                #nte-bar-content .bar-data-label {
-                    font-size: 8px;
-                    color: #999;
-                    font-weight: 600;
-                    font-family: 'Orbitron', sans-serif;
-                    letter-spacing: 0.3px;
-                }
-                #nte-bar-content .bar-copy {
-                    background: linear-gradient(135deg, #FF9800, #F57C00);
-                    color: white;
-                    border: none;
-                    padding: 2px 10px;
-                    border-radius: 3px;
-                    font-size: 9px;
-                    font-weight: 600;
-                    cursor: pointer;
-                    font-family: 'Orbitron', sans-serif;
-                    letter-spacing: 0.3px;
-                    transition: all 0.2s;
-                    height: 20px;
-                    white-space: nowrap;
-                }
-                #nte-bar-content .bar-copy:hover {
-                    background: linear-gradient(135deg, #F57C00, #E65100);
-                }
-                #nte-bar-content .bar-hint {
-                    font-size: 8px;
-                    color: #999;
-                }
-                #nte-bar-content .bar-mac-preview {
-                    font-size: 9px;
-                    color: #FF9800;
-                    font-family: 'SF Mono', monospace;
-                }
-            </style>
-
-            <!-- Строка 1: NTE|ONU + статус + форма -->
-            <div class="bar-row1">
-                <div class="bar-mode">
-                    <button class="bar-mode-btn ${nteMode === 'nte' ? 'active' : ''}" id="mode-nte-btn">NTE</button>
-                    <button class="bar-mode-btn ${nteMode === 'onu' ? 'active' : ''}" id="mode-onu-btn">ONU</button>
-                </div>
-
-                <div class="bar-radio" id="bar-status-group">
-                    <label>
-                        <input type="radio" name="nte-status" value="not_connected" ${savedStatus === 'not_connected' ? 'checked' : ''}>
-                        Не подкл.
-                    </label>
-                    <label>
-                        <input type="radio" name="nte-status" value="connected" ${savedStatus === 'connected' ? 'checked' : ''}>
-                        Подкл.
-                    </label>
-                </div>
-
-                <span id="bar-form-fields" style="display:flex; gap:4px; align-items:center;"></span>
-            </div>
-
-            <!-- Строка 2: данные из биллинга + кнопка копировать -->
-            <div class="bar-row2">
-                <span class="bar-data-label">DESC:</span>
-                <span class="bar-data" style="flex:1; max-width:200px;" title="${displayDesc}">${displayDesc}</span>
-
-                <span class="bar-data-label" style="margin-left:4px;">${nteMode === 'onu' ? 'CDATA' : 'OLT'}:</span>
-                <span class="bar-data" style="color:${displayOlt !== '❌ НЕ НАЙДЕН' ? '#4CAF50' : '#f44336'}">${displayOlt}</span>
-
-                <span class="bar-data-label" style="margin-left:4px;">VLAN:</span>
-                <span class="bar-data" style="color:${currentVlan ? '#4CAF50' : '#f44336'}">${currentVlan || '❌'}</span>
-
-                <button class="bar-copy" id="nte-copy-config" style="margin-left:auto;">📋 Коп.</button>
-            </div>
-
-            <div id="nte-preview" style="display:none;"></div>
-        `;
-
-        // После рендера заполняем форму
-        updateBarForm();
-    }
-
-    // Заполняет форму (MAC/SN + профиль) внутри bar-row1
-    function updateBarForm() {
-        const formFields = document.getElementById('bar-form-fields');
-        if (!formFields) return;
-
-        const selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+        // Вычисляем предпросмотр
+        var previewText = '';
+        var oltVal = displayOlt;
+        var vlanVal = currentVlan || '—';
+        var descVal = displayDesc;
 
         if (nteMode === 'onu') {
-            if (selectedStatus === 'not_connected') {
-                formFields.innerHTML = `
-                    <input type="text" id="onu-sn-input" class="bar-input" placeholder="SN" maxlength="12" value="${onuFormState.sn}" style="width:100px;">
-                    <span id="onu-sn-preview" class="bar-mac-preview"></span>
-                `;
-            } else {
-                formFields.innerHTML = `<span style="font-size:9px;color:#1976D2;">✅ Настроится авто</span>`;
-            }
+            var sn = selectedSN ? selectedSN.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+            var snDisplay = sn || '—';
+            previewText = 'ONU\nSN: ' + snDisplay + '\nCDATA: ' + oltVal + '\nVLAN: ' + vlanVal + '\nDESC: ' + descVal;
         } else {
-            if (selectedStatus === 'not_connected') {
-                formFields.innerHTML = `
-                    <input type="text" id="nte-mac-input" class="bar-input" placeholder="MAC" maxlength="17" value="${nteFormState.mac}" style="width:110px;">
-                    <select id="nte-profile-select" class="bar-select" style="width:130px;">
-                        ${NTE_PROFILES.map(p => `<option value="${p}" ${nteFormState.profile === p ? 'selected' : ''}>${p}</option>`).join('')}
-                    </select>
-                    <span id="nte-mac-preview" class="bar-mac-preview"></span>
-                    <span id="nte-profile-hint" class="bar-hint"></span>
-                `;
-            } else {
-                formFields.innerHTML = `<span style="font-size:9px;color:#1976D2;">✅ Настроится авто</span>`;
+            var mac = selectedMac ? selectedMac.replace(/[^0-9A-F]/g, '') : '';
+            var macDisplay = mac.length === 12 ? formatMAC(mac) : (mac || '—');
+            var profileDisplay = (savedStatus === 'not_connected' && selectedProfile) ? selectedProfile : '—';
+            previewText = 'NTE\nMAC: ' + macDisplay + '\nOLT: ' + oltVal + '\nVLAN: ' + vlanVal + '\nDESC: ' + descVal;
+            if (savedStatus === 'not_connected' && selectedProfile) {
+                previewText += '\nProfile: ' + selectedProfile;
             }
         }
 
-        // Переустанавливаем обработчики после обновления HTML
+        content.innerHTML = `
+            <style>
+                .bar-col-label { font-size:10px; color:#999; font-weight:600; font-family:'Orbitron',sans-serif; letter-spacing:0.3px; }
+                .bar-col-value { font-size:12px; font-family:'SF Mono',monospace; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                .bar-col-value.good { color:#4CAF50; }
+                .bar-col-value.bad { color:#f44336; }
+                .bar-mode-switch { display:flex; background:#e0e0e0; border-radius:5px; padding:2px; gap:2px; }
+                .bar-mode-btn { padding:3px 12px; border:none; background:transparent; cursor:pointer; font-family:'Orbitron',sans-serif; font-size:11px; font-weight:600; color:#666; border-radius:4px; transition:all 0.2s; }
+                .bar-mode-btn.active { background:white; color:#FF9800; box-shadow:0 1px 3px rgba(0,0,0,0.1); }
+                .bar-mode-btn:hover:not(.active) { background:rgba(255,255,255,0.5); }
+                .bar-radio-label { display:flex; align-items:center; gap:3px; cursor:pointer; font-size:11px; white-space:nowrap; color:#333; }
+                .bar-field { padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px; font-family:'SF Mono',monospace; box-sizing:border-box; }
+                .bar-field:focus { outline:none; border-color:#FF9800; box-shadow:0 0 0 2px rgba(255,152,0,0.1); }
+                .bar-select { padding:3px 4px; border:1px solid #ccc; border-radius:4px; font-size:11px; background:white; box-sizing:border-box; }
+                .bar-copy-btn { background:linear-gradient(135deg,#FF9800,#F57C00); color:white; border:none; padding:4px 12px; border-radius:4px; font-size:10px; font-weight:600; cursor:pointer; font-family:'Orbitron',sans-serif; letter-spacing:0.3px; white-space:nowrap; }
+                .bar-copy-btn:hover { background:linear-gradient(135deg,#F57C00,#E65100); }
+                .bar-preview { font-size:10px; font-family:'SF Mono',monospace; color:#555; white-space:pre; line-height:1.3; overflow:hidden; }
+                .bar-mac-hint { font-size:10px; color:#FF9800; font-family:'SF Mono',monospace; }
+            </style>
+
+            <div style="display:flex; height:100%; gap:8px; align-items:stretch; min-width:0;">
+
+                <!-- Колонка 2: Режим + Статус -->
+                <div style="display:flex; flex-direction:column; gap:4px; flex:0 0 145px; justify-content:center;">
+                    <div class="bar-mode-switch">
+                        <button class="bar-mode-btn ${nteMode === 'nte' ? 'active' : ''}" id="mode-nte-btn">NTE</button>
+                        <button class="bar-mode-btn ${nteMode === 'onu' ? 'active' : ''}" id="mode-onu-btn">ONU</button>
+                    </div>
+                    <div style="display:flex; flex-direction:column; gap:1px;">
+                        <label class="bar-radio-label"><input type="radio" name="nte-status" value="not_connected" ${savedStatus === 'not_connected' ? 'checked' : ''}> Не подключена</label>
+                        <label class="bar-radio-label"><input type="radio" name="nte-status" value="connected" ${savedStatus === 'connected' ? 'checked' : ''}> Подключена</label>
+                    </div>
+                </div>
+
+                <!-- Колонка 3: Данные -->
+                <div style="display:flex; flex-direction:column; gap:2px; flex:2; justify-content:center; min-width:0;">
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="bar-col-label">DESC:</span>
+                        <span class="bar-col-value" style="flex:1;" title="${descVal}">${descVal}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="bar-col-label">${nteMode === 'onu' ? 'CDATA' : 'OLT'}:</span>
+                        <span class="bar-col-value ${oltVal !== '❌ НЕ НАЙДЕН' ? 'good' : 'bad'}">${oltVal}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="bar-col-label">VLAN:</span>
+                        <span class="bar-col-value ${vlanVal !== '—' ? 'good' : 'bad'}">${vlanVal}</span>
+                    </div>
+                </div>
+
+                <!-- Колонка 4: Форма (MAC/SN + Profile) -->
+                <div style="display:flex; flex-direction:column; gap:4px; flex:1.5; justify-content:center; min-width:0;">
+                    <div id="bar-form-fields" style="display:flex; flex-direction:column; gap:4px;">
+                        <!-- Заполняется динамически в updateBarForm() -->
+                    </div>
+                </div>
+
+                <!-- Колонка 5: Предпросмотр + Копировать -->
+                <div style="display:flex; flex-direction:column; gap:3px; flex:0 0 175px; justify-content:center;">
+                    <div class="bar-preview" id="bar-preview-text">${previewText}</div>
+                    <button class="bar-copy-btn" id="nte-copy-config" style="align-self:flex-end;">📋 Копировать</button>
+                </div>
+
+            </div>
+        `;
+
+        updateBarForm();
+    }
+
+    // Заполняет форму (MAC/SN + профиль) в колонке 4
+    function updateBarForm() {
+        var formFields = document.getElementById('bar-form-fields');
+        if (!formFields) return;
+        var selectedStatus = document.querySelector('input[name="nte-status"]:checked')?.value || 'not_connected';
+
+        if (nteMode === 'onu') {
+            if (selectedStatus === 'not_connected') {
+                formFields.innerHTML = '<span class="bar-col-label">SN:</span>' +
+                    '<input type="text" id="onu-sn-input" class="bar-field" placeholder="HWTCAF6DEECC" maxlength="12" value="' + onuFormState.sn + '" style="width:100%;">' +
+                    '<span id="onu-sn-preview" class="bar-mac-hint"></span>';
+            } else {
+                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;line-height:1.4;">✅ Настроится<br>автоматически</span>';
+            }
+        } else {
+            if (selectedStatus === 'not_connected') {
+                formFields.innerHTML =
+                    '<div style="display:flex; align-items:center; gap:4px;">' +
+                        '<span class="bar-col-label" style="flex-shrink:0;">MAC:</span>' +
+                        '<input type="text" id="nte-mac-input" class="bar-field" placeholder="02005E09DCF8" maxlength="17" value="' + nteFormState.mac + '" style="flex:1;">' +
+                    '</div>' +
+                    '<div style="display:flex; align-items:center; gap:4px;">' +
+                        '<span class="bar-col-label" style="flex-shrink:0;">Profile:</span>' +
+                        '<select id="nte-profile-select" class="bar-select" style="flex:1;">' +
+                            NTE_PROFILES.map(function(p) { return '<option value="' + p + '" ' + (nteFormState.profile === p ? 'selected' : '') + '>' + p + '</option>'; }).join('') +
+                        '</select>' +
+                    '</div>' +
+                    '<div style="display:flex; gap:6px;">' +
+                        '<span id="nte-mac-preview" class="bar-mac-hint"></span>' +
+                        '<span id="nte-profile-hint" style="font-size:10px;color:#999;"></span>' +
+                    '</div>';
+            } else {
+                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;line-height:1.4;">✅ Настроится<br>автоматически</span>';
+            }
+        }
+
         setupBarInputHandlers();
     }
 
