@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.10
+// @version      10.11
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1044,8 +1044,8 @@ Desc: ${desc || '—'}`;
             font-size: 14px;
             cursor: pointer;
             flex-shrink: 0;
-            align-self: flex-end;
-            box-shadow: 0 -2px 6px rgba(156,39,176,0.3);
+            align-self: flex-start;
+            box-shadow: 0 2px 6px rgba(156,39,176,0.3);
             transition: height 0.2s ease;
             user-select: none;
         `;
@@ -1226,7 +1226,6 @@ Desc: ${desc || '—'}`;
 
                 // Колонка 5: Предпросмотр
                 '<div style="display:flex;flex-direction:column;gap:1px;flex:0 0 150px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:2px 5px;">' +
-                    '<div style="font-size:8px;color:#aaa;font-weight:600;font-family:Orbitron,sans-serif;letter-spacing:0.3px;">ПРЕДПРОСМОТР</div>' +
                     previewLines +
                 '</div>' +
 
@@ -1237,7 +1236,7 @@ Desc: ${desc || '—'}`;
 
                 // Колонка 7: Зона сообщений (статус, ошибки, уведомления)
                 '<div id="bar-status-msg" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 4px;min-width:0;overflow:hidden;">' +
-                    '<div style="font-size:11px;color:#999;font-family:SF Mono,monospace;" id="bar-msg-text">✓ Готов</div>' +
+                    '<div style="font-size:18px;color:#999;font-family:SF Mono,monospace;font-weight:600;" id="bar-msg-text">✓ Готов</div>' +
                 '</div>' +
 
             '</div>';
