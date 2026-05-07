@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.11
+// @version      10.12
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1014,7 +1014,7 @@ Desc: ${desc || '—'}`;
             bottom: 0;
             left: 0;
             width: 100%;
-            height: 90px;
+            height: 80px;
             z-index: 999999;
             background: #ffffff;
             display: flex;
@@ -1026,6 +1026,7 @@ Desc: ${desc || '—'}`;
             font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             box-sizing: border-box;
             border-top: 1px solid #e0e0e0;
+            overflow: visible;
         `;
 
         // ========== ФЛАЖОК 🚀 (как в старом скрипте) ==========
@@ -1035,9 +1036,9 @@ Desc: ${desc || '—'}`;
         rocketFlag.title = 'Запустить расширение';
         rocketFlag.style.cssText = `
             width: 36px;
-            height: 22px;
+            height: 26px;
             background: linear-gradient(135deg, #9C27B0, #7B1FA2);
-            border-radius: 8px 8px 0 0;
+            border-radius: 0 0 8px 8px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -1045,9 +1046,12 @@ Desc: ${desc || '—'}`;
             cursor: pointer;
             flex-shrink: 0;
             align-self: flex-start;
+            margin-top: -8px;
             box-shadow: 0 2px 6px rgba(156,39,176,0.3);
             transition: height 0.2s ease;
             user-select: none;
+            z-index: 1000000;
+            position: relative;
         `;
         rocketFlag.onmouseover = () => { rocketFlag.style.height = '32px'; rocketFlag.style.fontSize = '18px'; };
         rocketFlag.onmouseout = () => { rocketFlag.style.height = '22px'; rocketFlag.style.fontSize = '14px'; };
