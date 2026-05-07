@@ -1040,7 +1040,7 @@ Desc: ${desc || '—'}`;
             width: 36px;
             height: 22px;
             background: linear-gradient(135deg, #9C27B0, #7B1FA2);
-            border-radius: 0 0 8px 8px;
+            border-radius: 8px 8px 0 0;
             display: flex;
             align-items: center;
             justify-content: center;
