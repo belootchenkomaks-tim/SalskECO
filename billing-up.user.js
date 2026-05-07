@@ -1026,8 +1026,6 @@ Desc: ${desc || '—'}`;
             font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             box-sizing: border-box;
             border-top: 1px solid #e0e0e0;
-            overflow: visible;
-            position: relative;
         `;
 
         // ========== ФЛАЖОК 🚀 (как в старом скрипте) ==========
@@ -1036,8 +1034,8 @@ Desc: ${desc || '—'}`;
         rocketFlag.textContent = '🚀';
         rocketFlag.title = 'Запустить расширение';
         rocketFlag.style.cssText = `
-            position: absolute;
-            bottom: 100%;
+            position: fixed;
+            bottom: 80px;
             left: 8px;
             width: 36px;
             height: 22px;
