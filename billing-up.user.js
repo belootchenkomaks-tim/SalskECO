@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.9
+// @version      10.10
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -442,30 +442,42 @@ Desc: ${desc || '—'}`;
                     });
                 }
 
+    function setBarStatus(msg, type) {
+        var el = document.getElementById('bar-msg-text');
+        if (!el) return;
+        var color = type === 'success' ? '#4CAF50' : type === 'error' ? '#f44336' : type === 'info' ? '#2196F3' : '#999';
+        el.textContent = msg;
+        el.style.color = color;
+        if (window._barStatusTimer) clearTimeout(window._barStatusTimer);
+        window._barStatusTimer = setTimeout(function() {
+            var el2 = document.getElementById('bar-msg-text');
+            if (el2) { el2.textContent = '✓ Готов'; el2.style.color = '#999'; }
+        }, 4000);
+    }
+
     function showNotification(message, type) {
+        // Показываем в статус-баре
+        setBarStatus(message, type);
+
+        // Также показываем всплывающее уведомление (если нужно)
         const notification = document.createElement('div');
         notification.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
-            padding: 12px 20px;
+            padding: 8px 16px;
             background: ${type === 'success' ? '#4CAF50' : type === 'info' ? '#2196F3' : '#F44336'};
             color: white;
-            border-radius: 8px;
+            border-radius: 6px;
             font-family: 'Orbitron', sans-serif;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 500;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             z-index: 10000000;
-            animation: slideIn 0.3s ease;
         `;
         notification.textContent = message;
         document.body.appendChild(notification);
-
-        setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => notification.remove(), 300);
-        }, 3000);
+        setTimeout(function() { notification.remove(); }, 2500);
     }
 
     function updateCollectedData() {
@@ -1212,11 +1224,20 @@ Desc: ${desc || '—'}`;
                     '<div id="bar-form-fields" style="display:flex;flex-direction:column;gap:3px;"></div>' +
                 '</div>' +
 
-                // Колонка 5: Предпросмотр (мелкий шрифт) + Копировать
-                '<div style="display:flex;flex-direction:column;gap:2px;flex:0 0 175px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:3px 6px;">' +
-                    '<div style="font-size:9px;color:#aaa;font-weight:600;font-family:Orbitron,sans-serif;letter-spacing:0.3px;margin-bottom:1px;">ПРЕДПРОСМОТР</div>' +
+                // Колонка 5: Предпросмотр
+                '<div style="display:flex;flex-direction:column;gap:1px;flex:0 0 150px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:2px 5px;">' +
+                    '<div style="font-size:8px;color:#aaa;font-weight:600;font-family:Orbitron,sans-serif;letter-spacing:0.3px;">ПРЕДПРОСМОТР</div>' +
                     previewLines +
-                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-end;margin-top:1px;">📋 Копировать</button>' +
+                '</div>' +
+
+                // Колонка 6: Кнопка копировать (отдельно, правее предпросмотра)
+                '<div style="display:flex;flex-direction:column;justify-content:center;flex-shrink:0;">' +
+                    '<button class="bc-cp" id="nte-copy-config" style="padding:4px 10px;">📋</button>' +
+                '</div>' +
+
+                // Колонка 7: Зона сообщений (статус, ошибки, уведомления)
+                '<div id="bar-status-msg" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 4px;min-width:0;overflow:hidden;">' +
+                    '<div style="font-size:11px;color:#999;font-family:SF Mono,monospace;" id="bar-msg-text">✓ Готов</div>' +
                 '</div>' +
 
             '</div>';
