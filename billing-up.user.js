@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.8
+// @version      10.9
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1137,6 +1137,27 @@ Desc: ${desc || '—'}`;
         var vlanVal = collectedData.vlan || '—';
         var savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
 
+        // Вычисляем данные для предпросмотра
+        var previewLines = '';
+        function addPL(l, v) { previewLines += '<div class="bc-pr">' + l + ': <span class="bc-prv">' + v + '</span></div>'; }
+        if (nteMode === 'onu') {
+            var snV = onuFormState.sn ? onuFormState.sn.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+            addPL('CDATA', oltVal);
+            addPL('SN', snV || '—');
+            addPL('VLAN', vlanVal);
+            addPL('DESC', descVal);
+        } else {
+            var macV = nteFormState.mac ? nteFormState.mac.replace(/[^0-9A-F]/g, '') : '';
+            var macD = macV.length === 12 ? formatMAC(macV) : (macV || '—');
+            addPL('OLT', oltVal);
+            addPL('MAC', macD);
+            addPL('VLAN', vlanVal);
+            addPL('DESC', descVal);
+            if (savedStatus === 'not_connected' && nteFormState.profile) {
+                addPL('Profile', nteFormState.profile);
+            }
+        }
+
         content.innerHTML = '' +
             '<style>' +
                 '.bc-l { font-size:11px; color:#999; font-weight:600; font-family:Orbitron,sans-serif; letter-spacing:0.3px; }' +
@@ -1149,15 +1170,17 @@ Desc: ${desc || '—'}`;
                 '.bc-f { padding:4px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px; font-family:SF Mono,monospace; box-sizing:border-box; }' +
                 '.bc-f:focus { outline:none; border-color:#FF9800; }' +
                 '.bc-sl { padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px; background:white; }' +
-                '.bc-cp { background:linear-gradient(135deg,#FF9800,#F57C00); color:white; border:none; padding:5px 16px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer; font-family:Orbitron,sans-serif; white-space:nowrap; }' +
+                '.bc-cp { background:linear-gradient(135deg,#FF9800,#F57C00); color:white; border:none; padding:4px 14px; border-radius:4px; font-size:11px; font-weight:600; cursor:pointer; font-family:Orbitron,sans-serif; white-space:nowrap; }' +
                 '.bc-cp:hover { background:linear-gradient(135deg,#F57C00,#E65100); }' +
                 '.bc-ph { font-size:11px; color:#FF9800; font-family:SF Mono,monospace; }' +
+                '.bc-pr { font-size:10px; color:#888; font-family:SF Mono,monospace; line-height:1.3; }' +
+                '.bc-prv { color:#555; }' +
             '</style>' +
 
-            '<div style="display:flex;height:100%;gap:8px;align-items:stretch;min-width:0;">' +
+            '<div style="display:flex;height:100%;gap:6px;align-items:stretch;min-width:0;">' +
 
                 // Колонка 2: 2×2 сетка — NTE/ONU + статус
-                '<div style="display:flex;flex-direction:row;gap:6px;flex:0 0 170px;justify-content:center;align-items:center;">' +
+                '<div style="display:flex;flex-direction:row;gap:6px;flex:0 0 165px;justify-content:center;align-items:center;">' +
                     '<div class="bc-ms">' +
                         '<button class="bc-mb ' + (nteMode === 'nte' ? 'act' : '') + '" id="mode-nte-btn">NTE</button>' +
                         '<button class="bc-mb ' + (nteMode === 'onu' ? 'act' : '') + '" id="mode-onu-btn">ONU</button>' +
@@ -1169,7 +1192,7 @@ Desc: ${desc || '—'}`;
                 '</div>' +
 
                 // Колонка 3: Данные (DESC, OLT, VLAN)
-                '<div style="display:flex;flex-direction:column;gap:2px;flex:1;max-width:300px;justify-content:center;min-width:0;">' +
+                '<div style="display:flex;flex-direction:column;gap:2px;flex:1;max-width:260px;justify-content:center;min-width:0;">' +
                     '<div style="display:flex;align-items:center;gap:6px;">' +
                         '<span class="bc-l">DESC:</span>' +
                         '<span class="bc-v" style="flex:1;" title="' + descVal + '">' + descVal + '</span>' +
@@ -1184,10 +1207,16 @@ Desc: ${desc || '—'}`;
                     '</div>' +
                 '</div>' +
 
-                // Колонка 4: Форма (MAC/SN + Profile) + Кнопка
-                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:260px;justify-content:center;min-width:0;">' +
+                // Колонка 4: Форма (MAC/SN + Profile)
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:240px;justify-content:center;min-width:0;">' +
                     '<div id="bar-form-fields" style="display:flex;flex-direction:column;gap:3px;"></div>' +
-                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-start;margin-top:2px;">📋 Копировать</button>' +
+                '</div>' +
+
+                // Колонка 5: Предпросмотр (мелкий шрифт) + Копировать
+                '<div style="display:flex;flex-direction:column;gap:2px;flex:0 0 175px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:3px 6px;">' +
+                    '<div style="font-size:9px;color:#aaa;font-weight:600;font-family:Orbitron,sans-serif;letter-spacing:0.3px;margin-bottom:1px;">ПРЕДПРОСМОТР</div>' +
+                    previewLines +
+                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-end;margin-top:1px;">📋 Копировать</button>' +
                 '</div>' +
 
             '</div>';
