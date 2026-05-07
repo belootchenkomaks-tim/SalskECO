@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         BILLING UP
+// @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      9.3
-// @description  Собирает данные с billing.timernet.ru и ищет по номеру договора в USERSIDE
+// @version      10.0
+// @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
 // @updateURL    https://raw.githubusercontent.com/belootchenkomaks-tim/SalskECO/refs/heads/main/billing-up.user.js
@@ -32,15 +32,6 @@
     let lastDesc = '';
     let ipFoundForCurrentDesc = false;
 
-    const USERSIDE_URL = 'http://5.59.141.59:8080/oper/';
-
-    const LTE_IPS = [
-        '172.18.0.100', '172.18.0.101', '172.18.0.102',
-        '172.18.0.103', '172.18.0.104', '172.18.0.105',
-        '172.18.0.106', '172.18.0.107', '172.18.0.108',
-        '172.18.0.109', '172.18.0.110'
-    ];
-
     const NTE_PROFILES = [
         'Vlan-Pass',
         'NTE-2-VPU',
@@ -58,7 +49,7 @@
         'SKAT-NTE-RG-1421G-PPPoE'
     ];
 
-    let currentView = 'main';
+    let currentView = 'nte-wizard';
     let nteFormState = {
         status: 'not_connected',
         mac: '',
@@ -121,25 +112,6 @@
             return contract;
         }
         return '';
-    }
-
-    function openUserside() {
-        saveDataForUserside();
-
-        const contractNumber = collectedData.contract;
-
-        if (contractNumber) {
-            let searchContract = contractNumber
-                .replace(/^ULS_/i, 'ЮЛС-')
-                .replace(/^ULS-/i, 'ЮЛС-');
-
-            let address = collectedData.originalAddress || collectedData.address || '';
-            const encodedAddress = encodeURIComponent(address);
-            const usersideUrl = `http://5.59.141.59:8080/oper/?core_section=customer_list&action=search_page&search=${encodeURIComponent(searchContract)}&address_data=${encodedAddress}from=billing`;
-
-            console.log('🔗 URL для USERSIDE:', usersideUrl);
-            window.open(usersideUrl, '_blank');
-        }
     }
 
     function getAddress() {
@@ -349,30 +321,6 @@
             localStorage.setItem('billing_search_contract', collectedData.contract);
 
             console.log('💾 Данные сохранены для USERSIDE:', dataToSave);
-        }
-    }
-
-    function openLteDevice() {
-        const ip = collectedData.ip;
-
-        if (!ip) {
-            console.log('❌ Нет IP для открытия');
-            return;
-        }
-
-        if (!LTE_IPS.includes(ip)) {
-            console.log('❌ IP не входит в диапазон LTE:', ip);
-            return;
-        }
-
-        const lteUrl = `http://${ip}/home`;
-        console.log('📡 Открываем LTE устройство:', lteUrl);
-
-        const tabName = `lte_${ip.replace(/\./g, '_')}`;
-        const newTab = window.open(lteUrl, tabName);
-
-        if (newTab) {
-            newTab.focus();
         }
     }
 
@@ -770,22 +718,6 @@ Desc: ${desc || '—'}`;
 
 
 
-    function backToMain() {
-        console.log('🔄 Возвращаемся на главную');
-        saveNTEFormState();
-        currentView = 'main';
-
-        if (content) {
-            content.innerHTML = renderMainView();
-            setupCopyButtons();
-        }
-
-        const titleSpan = document.querySelector('#timernet-window .header-title');
-        if (titleSpan) {
-            titleSpan.textContent = 'BILLING UP';
-        }
-    }
-
     function saveNTEFormState() {
         const statusRadio = document.querySelector('input[name="nte-status"]:checked');
         if (statusRadio) {
@@ -801,42 +733,6 @@ Desc: ${desc || '—'}`;
         if (profileSelect) {
             nteFormState.profile = profileSelect.value;
         }
-    }
-
-    function renderMainView() {
-        const combined = collectedData.combined || '—';
-        const ip = collectedData.ip || '—';
-        const cdataNumber = collectedData.cdataNumber || '';
-        const vlan = collectedData.vlan || '—';
-
-        return `
-            <div style="margin-bottom: 12px; background: #e8f0fe; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <span style="color: #1976D2; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">DESC</span>
-                    <button class="copy-btn" data-copy="${combined !== '—' ? combined : ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
-                </div>
-                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #1a237e; line-height: 1.4; font-weight: 500;">${combined}</div>
-            </div>
-
-            <div style="margin-bottom: 12px; background: #fce4ec; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <span style="color: #c2185b; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">IP АДРЕС</span>
-                    <button class="copy-btn" data-copy="${ip !== '—' ? ip : ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
-                </div>
-                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #880e4f; line-height: 1.4; font-weight: 500;">
-                    ${ip}
-                    ${cdataNumber ? `<span style="color: #666; font-size: 11px; margin-left: 5px;">(CDATA-${cdataNumber})</span>` : ''}
-                </div>
-            </div>
-
-            <div style="margin-bottom: 0; background: #f5f5f5; border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(0, 0, 0, 0.05);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                    <span style="color: #616161; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">VLAN</span>
-                    <button class="copy-btn" data-copy="${vlan !== '—' ? vlan : ''}" style="background:none; border:none; font-size:14px; cursor:pointer; color:#78909c; width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:6px;">📋</button>
-                </div>
-                <div style="word-break: break-all; font-size: 12px; font-family: 'SF Mono', 'Menlo', monospace; color: #424242; line-height: 1.4; font-weight: 500;">${vlan}</div>
-            </div>
-        `;
     }
 
     function renderNTEView() {
@@ -1112,7 +1008,6 @@ Desc: ${desc || '—'}`;
                 <div id="nte-preview" class="preview-box" style="display: none;"></div>
 
                 <button class="nte-button" id="nte-copy-config">📋 Скопировать данные</button>
-                <button class="nte-button nte-button-secondary" id="nte-back-to-main">◀ Назад</button>
             </div>
         `;
     }
@@ -1517,11 +1412,6 @@ Desc: ${desc}`;
             }
         });
 
-        document.getElementById('nte-back-to-main').addEventListener('click', function() {
-            isInputFocused = false;
-            backToMain();
-        });
-
         // Сохраняем флаг в глобальную переменную для доступа из updateCollectedData
         window.nteInputFocused = () => isInputFocused;
         window.isSNInputFocused = () => isSNFocused;
@@ -1579,55 +1469,16 @@ Desc: ${desc || '—'}`;
     }
 
     function setupCopyButtons() {
-        document.querySelectorAll('.copy-btn').forEach(btn => {
-            btn.onmouseover = () => {
-                btn.style.background = 'rgba(33, 150, 243, 0.1)';
-                btn.style.color = '#2196F3';
-            };
-            btn.onmouseout = () => {
-                btn.style.background = 'none';
-                btn.style.color = '#78909c';
-            };
-            btn.onclick = function(e) {
-                e.stopPropagation();
-                const text = this.getAttribute('data-copy');
-                if (text && text !== '—' && text !== '') {
-                    navigator.clipboard.writeText(text).then(() => {
-                        const originalIcon = this.innerHTML;
-                        this.innerHTML = '✓';
-                        this.style.color = '#4caf50';
-                        setTimeout(() => {
-                            this.innerHTML = originalIcon;
-                            this.style.color = '#78909c';
-                        }, 1000);
-                    });
-                }
-            };
-        });
+        // Кнопки копирования больше не используются (main-view удалён)
     }
 
     function updateContent() {
         const dataChanged = updateCollectedData();
 
-        const lteIcon = document.getElementById('lte-nav-icon');
-        if (lteIcon) {
-            if (collectedData.ip && LTE_IPS.includes(collectedData.ip)) {
-                lteIcon.style.display = 'block';
-            } else {
-                lteIcon.style.display = 'none';
-            }
-        }
-
         if (!content) return;
         if (content.style.display === 'none') return;
 
-        if (currentView === 'main') {
-            if (dataChanged) {
-                content.innerHTML = renderMainView();
-                setupCopyButtons();
-            }
-        } else if (currentView === 'nte-wizard') {
-            // Всегда проверяем и обновляем данные в NTE Wizard
+        if (currentView === 'nte-wizard') {
             if (dataChanged) {
                 saveNTEFormState();
                 content.innerHTML = renderNTEView();
@@ -1663,7 +1514,7 @@ Desc: ${desc || '—'}`;
         container.style.cssText = `
             position: fixed;
             bottom: 60px;
-            left: 10px;
+            right: 10px;
             z-index: 999998;
             display: flex;
             flex-direction: column;
@@ -1678,98 +1529,19 @@ Desc: ${desc || '—'}`;
         const iconsWrapper = document.createElement('div');
         iconsWrapper.style.cssText = `
             position: relative;
-            width: 208px;
+            width: 104px;
             height: 32px;
             margin-bottom: -2px;
             align-self: flex-start;
             margin-left: 10px;
         `;
 
-        // USERSIDE ICON
-        const usersideIcon = document.createElement('div');
-        usersideIcon.id = 'userside-nav-icon';
-        usersideIcon.style.cssText = `
-            position: absolute;
-            left: 0;
-            bottom: 0;
-            width: 42px;
-            height: 12px;
-            background: linear-gradient(135deg, #1E88E5, #1565C0);
-            border: none;
-            border-radius: 12px 12px 0px 0px;
-            box-shadow: 0 -2px 8px rgba(30, 136, 229, 0.3);
-            cursor: pointer;
-            overflow: hidden;
-            transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            pointer-events: auto;
-            z-index: 999999;
-        `;
-
-        const usersideLogo = document.createElement('img');
-        usersideLogo.src = 'https://avatars.githubusercontent.com/u/32836293?s=200&v=4';
-        usersideLogo.style.cssText = `
-            width: 26px;
-            height: 26px;
-            object-fit: contain;
-            pointer-events: none;
-            position: absolute;
-            bottom: -14px;
-            left: 50%;
-            transform: translateX(-50%);
-            transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            z-index: 999999;
-        `;
-
-        usersideIcon.appendChild(usersideLogo);
-
-        const usersideTooltip = document.createElement('div');
-        usersideTooltip.textContent = 'Переход в USERSIDE';
-        usersideTooltip.style.cssText = `
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            font-family: 'Orbitron', Arial, sans-serif;
-            z-index: 1000000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 8px;
-        `;
-
-        usersideIcon.appendChild(usersideTooltip);
-
-        usersideIcon.onmouseover = () => {
-            usersideIcon.style.height = '32px';
-            usersideIcon.style.background = 'linear-gradient(135deg, #1565C0, #0D47A1)';
-            usersideLogo.style.bottom = '3px';
-            usersideTooltip.style.opacity = '1';
-        };
-
-        usersideIcon.onmouseout = () => {
-            usersideIcon.style.height = '12px';
-            usersideIcon.style.background = 'linear-gradient(135deg, #1E88E5, #1565C0)';
-            usersideLogo.style.bottom = '-14px';
-            usersideTooltip.style.opacity = '0';
-        };
-
-        usersideIcon.onclick = openUserside;
-
         // EXTENSION ICON
         const extensionIcon = document.createElement('div');
         extensionIcon.id = 'extension-nav-icon';
         extensionIcon.style.cssText = `
             position: absolute;
-            left: 52px;
+            left: 0;
             bottom: 0;
             width: 42px;
             height: 12px;
@@ -1847,96 +1619,12 @@ Desc: ${desc || '—'}`;
 
         extensionIcon.onclick = findAndLaunchExtension;
 
-        // LTE ICON
-        const lteIcon = document.createElement('div');
-        lteIcon.id = 'lte-nav-icon';
-        lteIcon.style.cssText = `
-            position: absolute;
-            left: 104px;
-            bottom: 0;
-            width: 42px;
-            height: 12px;
-            background: linear-gradient(135deg, #64B5F6, #42A5F5);
-            border: none;
-            border-radius: 12px 12px 0px 0px;
-            box-shadow: 0 -2px 8px rgba(100, 181, 246, 0.3);
-            cursor: pointer;
-            overflow: hidden;
-            transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            pointer-events: auto;
-            z-index: 999999;
-            display: none;
-        `;
-
-        const lteText = document.createElement('span');
-        lteText.textContent = 'LTE';
-        lteText.style.cssText = `
-            color: white;
-            font-family: 'Orbitron', Arial, sans-serif;
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            position: absolute;
-            bottom: -3px;
-            left: 50%;
-            transform: translateX(-50%);
-            pointer-events: none;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-            transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            z-index: 2;
-            white-space: nowrap;
-        `;
-
-        lteIcon.appendChild(lteText);
-
-        const lteTooltip = document.createElement('div');
-        lteTooltip.textContent = 'Переход на LTE';
-        lteTooltip.style.cssText = `
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            font-family: 'Orbitron', Arial, sans-serif;
-            z-index: 1000000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 8px;
-        `;
-
-        lteIcon.appendChild(lteTooltip);
-
-        lteIcon.onmouseover = () => {
-            lteIcon.style.height = '32px';
-            lteIcon.style.background = 'linear-gradient(135deg, #42A5F5, #2196F3)';
-            lteText.style.bottom = '12px';
-            lteTooltip.style.opacity = '1';
-        };
-
-        lteIcon.onmouseout = () => {
-            lteIcon.style.height = '12px';
-            lteIcon.style.background = 'linear-gradient(135deg, #64B5F6, #42A5F5)';
-            lteText.style.bottom = '-3px';
-            lteTooltip.style.opacity = '0';
-        };
-
-        lteIcon.onclick = openLteDevice;
-
         // NTE ICON
         nteIcon = document.createElement('div');
         nteIcon.id = 'nte-nav-icon';
         nteIcon.style.cssText = `
             position: absolute;
-            left: 156px;
+            left: 52px;
             bottom: 0;
             width: 42px;
             height: 12px;
@@ -2014,9 +1702,7 @@ Desc: ${desc || '—'}`;
 
         nteIcon.onclick = openNTEWizard;
 
-        iconsWrapper.appendChild(usersideIcon);
         iconsWrapper.appendChild(extensionIcon);
-        iconsWrapper.appendChild(lteIcon);
         iconsWrapper.appendChild(nteIcon);
 
         const windowDiv = document.createElement('div');
@@ -2047,7 +1733,7 @@ Desc: ${desc || '—'}`;
 
         const titleSpan = document.createElement('span');
         titleSpan.className = 'header-title';
-        titleSpan.innerHTML = 'BILLING UP';
+        titleSpan.innerHTML = '⚙️ NTE/ONU';
         titleSpan.style.cssText = `
             font-family: 'Orbitron', sans-serif;
             font-size: 14px;
@@ -2135,7 +1821,7 @@ Desc: ${desc || '—'}`;
             transition: all 0.3s ease;
             display: none;
             background: white;
-            max-height: 500px;
+            max-height: 300px;
             overflow-y: auto;
         `;
 
@@ -2182,7 +1868,14 @@ Desc: ${desc || '—'}`;
 
         initData();
 
-        let isCollapsed = true;
+        // Открываем сразу NTE/ONU настройку
+        currentView = 'nte-wizard';
+        let isCollapsed = false;
+        content.style.display = 'block';
+        content.innerHTML = renderNTEView();
+        setupNTEEventListeners();
+        toggleBtn.innerHTML = '−';
+        toggleBtn.title = 'Свернуть';
 
         toggleBtn.onclick = function(e) {
             e.stopPropagation();
@@ -2190,17 +1883,9 @@ Desc: ${desc || '—'}`;
                 content.style.display = 'block';
                 toggleBtn.innerHTML = '−';
                 toggleBtn.title = 'Свернуть';
-
-                // Рендерим контент при первом открытии
-                if (currentView === 'main') {
-                    content.innerHTML = renderMainView();
-                    setupCopyButtons();
-                }
-
-                // Проверяем и показываем LTE иконку если нужно
-                const lteIcon = document.getElementById('lte-nav-icon');
-                if (lteIcon && collectedData.ip && LTE_IPS.includes(collectedData.ip)) {
-                    lteIcon.style.display = 'block';
+                if (currentView === 'nte-wizard') {
+                    content.innerHTML = renderNTEView();
+                    setupNTEEventListeners();
                 }
             } else {
                 content.style.display = 'none';
