@@ -665,56 +665,7 @@ Desc: ${desc || '—'}`;
         }
     }
 
-    let container, content, toggleBtn, closeBtn, nteIcon;
-
-    function openNTEWizard() {
-        console.log('🔄 Открываем NTE Wizard');
-        currentView = 'nte-wizard';
-        nteMode = 'nte'; // Всегда начинаем с режима NTE
-
-        const freshContract = getContractNumber();
-        const freshAddress = getAddress();
-        const { ip: freshIp, cdataNumber: freshCdata } = getIpAndCdataNumber();
-        const freshVlan = getVlan();
-        let freshOlt = getOlt();
-
-        if (!freshOlt && freshIp) {
-            freshOlt = freshIp;
-        }
-
-        collectedData.contract = freshContract;
-        collectedData.address = freshAddress;
-        collectedData.originalAddress = freshAddress;
-        collectedData.ip = freshIp;
-        collectedData.cdataNumber = freshCdata;
-        collectedData.vlan = freshVlan;
-        collectedData.olt = freshOlt;
-
-        if (freshContract && freshAddress) {
-            const parts = extractAddressParts(freshAddress);
-            collectedData.combined = createCombinedParam(freshContract, freshAddress, parts);
-        }
-        collectedData.descWithoutContract = getDescWithoutContract();
-
-        console.log('📊 Данные при открытии NTE Wizard:', {
-            desc: collectedData.descWithoutContract,
-            olt: collectedData.olt,
-            vlan: collectedData.vlan,
-            combined: collectedData.combined
-        });
-
-        nteFormState.profileAutoDetected = false;
-
-        if (content) {
-            content.innerHTML = renderNTEView();
-            setupNTEEventListeners();
-        }
-
-        const titleSpan = document.querySelector('#timernet-window .header-title');
-        if (titleSpan) {
-            titleSpan.textContent = 'НАСТРОЙКА NTE/ONU';
-        }
-    }
+    let container, content;
 
 
 
@@ -1476,7 +1427,9 @@ Desc: ${desc || '—'}`;
         const dataChanged = updateCollectedData();
 
         if (!content) return;
-        if (content.style.display === 'none') return;
+
+        const ntePanel = document.getElementById('nte-panel');
+        if (!ntePanel || ntePanel.style.display === 'none') return;
 
         if (currentView === 'nte-wizard') {
             if (dataChanged) {
@@ -1493,13 +1446,19 @@ Desc: ${desc || '—'}`;
 
         const style = document.createElement('style');
         style.textContent = `
-            @keyframes slideIn {
-                from { transform: translateX(100%); opacity: 0; }
-                to { transform: translateX(0); opacity: 1; }
+            @keyframes nteSlideUp {
+                from { transform: translateY(100%); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
             }
-            @keyframes slideOut {
-                from { transform: translateX(0); opacity: 1; }
-                to { transform: translateX(100%); opacity: 0; }
+            @keyframes nteSlideDown {
+                from { transform: translateY(0); opacity: 1; }
+                to { transform: translateY(100%); opacity: 0; }
+            }
+            .nte-panel-open {
+                animation: nteSlideUp 0.25s ease forwards;
+            }
+            .nte-panel-close {
+                animation: nteSlideDown 0.2s ease forwards;
             }
         `;
         document.head.appendChild(style);
@@ -1509,254 +1468,126 @@ Desc: ${desc || '—'}`;
         fontLink.rel = 'stylesheet';
         document.head.appendChild(fontLink);
 
+        // ========== НИЖНЯЯ ПАНЕЛЬ (bottomBar) ==========
         container = document.createElement('div');
         container.id = 'timernet-container';
         container.style.cssText = `
             position: fixed;
-            bottom: 60px;
-            right: 10px;
-            z-index: 999998;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            opacity: 0.7;
-            transition: opacity 0.3s ease;
-        `;
-
-        container.onmouseenter = () => { container.style.opacity = '1'; };
-        container.onmouseleave = () => { container.style.opacity = '0.7'; };
-
-        const iconsWrapper = document.createElement('div');
-        iconsWrapper.style.cssText = `
-            position: relative;
-            width: 104px;
-            height: 32px;
-            margin-bottom: -2px;
-            align-self: flex-start;
-            margin-left: 10px;
-        `;
-
-        // EXTENSION ICON
-        const extensionIcon = document.createElement('div');
-        extensionIcon.id = 'extension-nav-icon';
-        extensionIcon.style.cssText = `
-            position: absolute;
+            bottom: 0;
             left: 0;
-            bottom: 0;
-            width: 42px;
-            height: 12px;
+            width: 100%;
+            height: 36px;
+            z-index: 999999;
+            background: linear-gradient(135deg, #1a237e, #283593);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            box-shadow: 0 -2px 8px rgba(0,0,0,0.3);
+            font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        `;
+
+        // Кнопка 🚀
+        const rocketBtn = document.createElement('button');
+        rocketBtn.textContent = '🚀 Расширение';
+        rocketBtn.style.cssText = `
             background: linear-gradient(135deg, #9C27B0, #7B1FA2);
+            color: white;
             border: none;
-            border-radius: 12px 12px 0px 0px;
-            box-shadow: 0 -2px 8px rgba(156, 39, 176, 0.3);
-            cursor: pointer;
-            overflow: hidden;
-            transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            pointer-events: auto;
-            z-index: 999999;
-        `;
-
-        const extensionText = document.createElement('span');
-        extensionText.textContent = '🚀';
-        extensionText.style.cssText = `
-            color: white;
-            font-family: 'Orbitron', Arial, sans-serif;
-            font-size: 16px;
-            font-weight: 600;
-            position: absolute;
-            bottom: -5px;
-            left: 50%;
-            transform: translateX(-50%);
-            pointer-events: none;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-            transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            z-index: 2;
-        `;
-
-        extensionIcon.appendChild(extensionText);
-
-        const extensionTooltip = document.createElement('div');
-        extensionTooltip.textContent = 'Запустить расширение';
-        extensionTooltip.style.cssText = `
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
-            color: white;
-            padding: 6px 12px;
+            padding: 4px 16px;
             border-radius: 6px;
             font-size: 12px;
-            font-weight: 500;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            font-family: 'Orbitron', Arial, sans-serif;
-            z-index: 1000000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 8px;
-        `;
-
-        extensionIcon.appendChild(extensionTooltip);
-
-        extensionIcon.onmouseover = () => {
-            extensionIcon.style.height = '32px';
-            extensionIcon.style.background = 'linear-gradient(135deg, #7B1FA2, #6A1B9A)';
-            extensionText.style.bottom = '8px';
-            extensionText.style.fontSize = '20px';
-            extensionTooltip.style.opacity = '1';
-        };
-
-        extensionIcon.onmouseout = () => {
-            extensionIcon.style.height = '12px';
-            extensionIcon.style.background = 'linear-gradient(135deg, #9C27B0, #7B1FA2)';
-            extensionText.style.bottom = '-5px';
-            extensionText.style.fontSize = '16px';
-            extensionTooltip.style.opacity = '0';
-        };
-
-        extensionIcon.onclick = findAndLaunchExtension;
-
-        // NTE ICON
-        nteIcon = document.createElement('div');
-        nteIcon.id = 'nte-nav-icon';
-        nteIcon.style.cssText = `
-            position: absolute;
-            left: 52px;
-            bottom: 0;
-            width: 42px;
-            height: 12px;
-            background: linear-gradient(135deg, #FF9800, #F57C00);
-            border: none;
-            border-radius: 12px 12px 0px 0px;
-            box-shadow: 0 -2px 8px rgba(255, 152, 0, 0.3);
-            cursor: pointer;
-            overflow: hidden;
-            transition: height 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            pointer-events: auto;
-            z-index: 999999;
-        `;
-
-        const nteText = document.createElement('span');
-        nteText.textContent = 'NTE';
-        nteText.style.cssText = `
-            color: white;
-            font-family: 'Orbitron', Arial, sans-serif;
-            font-size: 11px;
             font-weight: 600;
+            font-family: 'Orbitron', sans-serif;
+            cursor: pointer;
             letter-spacing: 0.5px;
-            position: absolute;
-            bottom: -2px;
-            left: 50%;
-            transform: translateX(-50%);
-            pointer-events: none;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-            transition: bottom 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
-            z-index: 2;
-            white-space: nowrap;
+            transition: all 0.2s ease;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         `;
+        rocketBtn.onmouseover = () => { rocketBtn.style.background = 'linear-gradient(135deg, #7B1FA2, #6A1B9A)'; };
+        rocketBtn.onmouseout = () => { rocketBtn.style.background = 'linear-gradient(135deg, #9C27B0, #7B1FA2)'; };
+        rocketBtn.onclick = findAndLaunchExtension;
 
-        nteIcon.appendChild(nteText);
-
-        const nteTooltip = document.createElement('div');
-        nteTooltip.textContent = 'Настройка НТЕ';
-        nteTooltip.style.cssText = `
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.85);
+        // Кнопка NTE
+        const nteBtn = document.createElement('button');
+        nteBtn.textContent = '⚙️ NTE/ONU';
+        nteBtn.style.cssText = `
+            background: linear-gradient(135deg, #FF9800, #F57C00);
             color: white;
-            padding: 6px 12px;
+            border: none;
+            padding: 4px 16px;
             border-radius: 6px;
             font-size: 12px;
-            font-weight: 500;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            font-family: 'Orbitron', Arial, sans-serif;
-            z-index: 1000000;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            margin-bottom: 8px;
+            font-weight: 600;
+            font-family: 'Orbitron', sans-serif;
+            cursor: pointer;
+            letter-spacing: 0.5px;
+            transition: all 0.2s ease;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         `;
+        nteBtn.onmouseover = () => { nteBtn.style.background = 'linear-gradient(135deg, #F57C00, #E65100)'; };
+        nteBtn.onmouseout = () => { nteBtn.style.background = 'linear-gradient(135deg, #FF9800, #F57C00)'; };
 
-        nteIcon.appendChild(nteTooltip);
+        container.appendChild(rocketBtn);
+        container.appendChild(nteBtn);
+        document.body.appendChild(container);
 
-        nteIcon.onmouseover = () => {
-            nteIcon.style.height = '32px';
-            nteIcon.style.background = 'linear-gradient(135deg, #F57C00, #E65100)';
-            nteText.style.bottom = '12px';
-            nteTooltip.style.opacity = '1';
-        };
-
-        nteIcon.onmouseout = () => {
-            nteIcon.style.height = '12px';
-            nteIcon.style.background = 'linear-gradient(135deg, #FF9800, #F57C00)';
-            nteText.style.bottom = '-2px';
-            nteTooltip.style.opacity = '0';
-        };
-
-        nteIcon.onclick = openNTEWizard;
-
-        iconsWrapper.appendChild(extensionIcon);
-        iconsWrapper.appendChild(nteIcon);
-
-        const windowDiv = document.createElement('div');
-        windowDiv.id = 'timernet-window';
-        windowDiv.style.cssText = `
-            width: 300px;
+        // ========== NTE ПАНЕЛЬ (выезжает снизу) ==========
+        const ntePanel = document.createElement('div');
+        ntePanel.id = 'nte-panel';
+        ntePanel.style.cssText = `
+            position: fixed;
+            bottom: 36px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 380px;
+            max-height: 310px;
             background: white;
-            border-radius: 12px;
-            padding: 0;
-            box-shadow: 0 8px 32px rgba(33, 150, 243, 0.2);
+            border-radius: 12px 12px 0 0;
+            box-shadow: 0 -4px 24px rgba(0,0,0,0.25);
             font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 12px;
             color: #2c3e50;
-            border: 1px solid rgba(33, 150, 243, 0.2);
+            z-index: 999998;
+            display: none;
+            overflow: hidden;
+            flex-direction: column;
         `;
 
-        const header = document.createElement('div');
-        header.style.cssText = `
-            background: linear-gradient(135deg, #2196F3, #1976D2);
-            padding: 12px 14px;
-            border-radius: 11px 11px 0 0;
+        // Заголовок NTE панели
+        const ntePanelHeader = document.createElement('div');
+        ntePanelHeader.style.cssText = `
+            background: linear-gradient(135deg, #FF9800, #F57C00);
+            padding: 8px 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            cursor: move;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            flex-shrink: 0;
         `;
 
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'header-title';
-        titleSpan.innerHTML = '⚙️ NTE/ONU';
-        titleSpan.style.cssText = `
+        const ntePanelTitle = document.createElement('span');
+        ntePanelTitle.innerHTML = '⚙️ НАСТРОЙКА NTE/ONU';
+        ntePanelTitle.style.cssText = `
             font-family: 'Orbitron', sans-serif;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 700;
-            letter-spacing: 1.5px;
+            letter-spacing: 1px;
             color: white;
-            text-shadow: 0 2px 10px rgba(255, 255, 255, 0.3);
+            text-shadow: 0 1px 4px rgba(0,0,0,0.2);
         `;
 
-        const headerButtons = document.createElement('div');
-        headerButtons.style.cssText = `
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        `;
-
-        toggleBtn = document.createElement('button');
-        toggleBtn.id = 'toggle-btn';
-        toggleBtn.innerHTML = '□';
-        toggleBtn.style.cssText = `
+        const ntePanelClose = document.createElement('button');
+        ntePanelClose.innerHTML = '×';
+        ntePanelClose.style.cssText = `
             background: rgba(255,255,255,0.2);
             border: none;
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 500;
             cursor: pointer;
             color: white;
@@ -1770,70 +1601,71 @@ Desc: ${desc || '—'}`;
             padding: 0;
             line-height: 1;
         `;
-        toggleBtn.onmouseover = () => {
-            toggleBtn.style.transform = 'scale(1.1)';
-            toggleBtn.style.background = 'rgba(255,255,255,0.3)';
+        ntePanelClose.onmouseover = () => {
+            ntePanelClose.style.transform = 'scale(1.1)';
+            ntePanelClose.style.background = 'rgba(244, 67, 54, 0.4)';
         };
-        toggleBtn.onmouseout = () => {
-            toggleBtn.style.transform = 'scale(1)';
-            toggleBtn.style.background = 'rgba(255,255,255,0.2)';
-        };
-        toggleBtn.title = 'Развернуть';
-
-        closeBtn = document.createElement('button');
-        closeBtn.id = 'close-btn';
-        closeBtn.innerHTML = '×';
-        closeBtn.style.cssText = `
-            background: rgba(255,255,255,0.2);
-            border: none;
-            font-size: 20px;
-            font-weight: 500;
-            cursor: pointer;
-            color: white;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            transition: all 0.2s ease;
-            padding: 0;
-            line-height: 1;
-        `;
-        closeBtn.onmouseover = () => {
-            closeBtn.style.transform = 'scale(1.1)';
-            closeBtn.style.background = 'rgba(244, 67, 54, 0.3)';
-        };
-        closeBtn.onmouseout = () => {
-            closeBtn.style.transform = 'scale(1)';
-            closeBtn.style.background = 'rgba(255,255,255,0.2)';
+        ntePanelClose.onmouseout = () => {
+            ntePanelClose.style.transform = 'scale(1)';
+            ntePanelClose.style.background = 'rgba(255,255,255,0.2)';
         };
 
-        headerButtons.appendChild(toggleBtn);
-        headerButtons.appendChild(closeBtn);
-        header.appendChild(titleSpan);
-        header.appendChild(headerButtons);
+        ntePanelHeader.appendChild(ntePanelTitle);
+        ntePanelHeader.appendChild(ntePanelClose);
+        ntePanel.appendChild(ntePanelHeader);
 
+        // Контент NTE панели (переиспользуем переменную content)
         content = document.createElement('div');
-        content.id = 'data-content';
+        content.id = 'nte-panel-content';
         content.style.cssText = `
-            padding: 14px;
-            transition: all 0.3s ease;
-            display: none;
-            background: white;
-            max-height: 300px;
+            padding: 12px 14px;
             overflow-y: auto;
+            flex: 1;
+            background: #fafafa;
         `;
 
-        windowDiv.appendChild(header);
-        windowDiv.appendChild(content);
+        ntePanel.appendChild(content);
+        document.body.appendChild(ntePanel);
 
-        container.appendChild(iconsWrapper);
-        container.appendChild(windowDiv);
-        document.body.appendChild(container);
+        // ========== ЛОГИКА ОТКРЫТИЯ/ЗАКРЫТИЯ ==========
+        let ntePanelVisible = false;
 
-        // Инициализация данных при создании окна
-        const initData = () => {
+        function showNtePanel() {
+            if (ntePanelVisible) return;
+            ntePanelVisible = true;
+            ntePanel.style.display = 'flex';
+            ntePanel.classList.remove('nte-panel-close');
+            ntePanel.classList.add('nte-panel-open');
+
+            // Загружаем данные и рендерим
+            currentView = 'nte-wizard';
+            initData();
+            content.innerHTML = renderNTEView();
+            setupNTEEventListeners();
+        }
+
+        function hideNtePanel() {
+            if (!ntePanelVisible) return;
+            ntePanel.classList.remove('nte-panel-open');
+            ntePanel.classList.add('nte-panel-close');
+            setTimeout(() => {
+                ntePanel.style.display = 'none';
+                ntePanelVisible = false;
+            }, 200);
+        }
+
+        nteBtn.onclick = function() {
+            if (ntePanelVisible) {
+                hideNtePanel();
+            } else {
+                showNtePanel();
+            }
+        };
+
+        ntePanelClose.onclick = hideNtePanel;
+
+        // ========== ИНИЦИАЛИЗАЦИЯ ДАННЫХ ==========
+        function initData() {
             const contract = getContractNumber();
             const address = getAddress();
             const { ip, cdataNumber } = getIpAndCdataNumber();
@@ -1864,66 +1696,12 @@ Desc: ${desc || '—'}`;
             lastAddress = address;
             lastDesc = collectedData.combined;
             ipFoundForCurrentDesc = !!ip;
-        };
+        }
 
         initData();
 
-        // Открываем сразу NTE/ONU настройку
-        currentView = 'nte-wizard';
-        let isCollapsed = false;
-        content.style.display = 'block';
-        content.innerHTML = renderNTEView();
-        setupNTEEventListeners();
-        toggleBtn.innerHTML = '−';
-        toggleBtn.title = 'Свернуть';
-
-        toggleBtn.onclick = function(e) {
-            e.stopPropagation();
-            if (isCollapsed) {
-                content.style.display = 'block';
-                toggleBtn.innerHTML = '−';
-                toggleBtn.title = 'Свернуть';
-                if (currentView === 'nte-wizard') {
-                    content.innerHTML = renderNTEView();
-                    setupNTEEventListeners();
-                }
-            } else {
-                content.style.display = 'none';
-                toggleBtn.innerHTML = '□';
-                toggleBtn.title = 'Развернуть';
-            }
-            isCollapsed = !isCollapsed;
-        };
-
-        closeBtn.onclick = function(e) {
-            e.stopPropagation();
-            container.remove();
-        };
-
-        let isDragging = false;
-        let offsetX, offsetY;
-
-        header.onmousedown = function(e) {
-            if (e.target === toggleBtn || e.target === closeBtn || e.target.tagName === 'BUTTON') return;
-            isDragging = true;
-            offsetX = e.clientX - container.offsetLeft;
-            offsetY = e.clientY - container.offsetTop;
-            header.style.cursor = 'grabbing';
-        };
-
-        document.onmousemove = function(e) {
-            if (isDragging) {
-                container.style.left = (e.clientX - offsetX) + 'px';
-                container.style.top = (e.clientY - offsetY) + 'px';
-                container.style.right = 'auto';
-                container.style.bottom = 'auto';
-            }
-        };
-
-        document.onmouseup = function() {
-            isDragging = false;
-            header.style.cursor = 'move';
-        };
+        // Сразу показываем NTE панель при загрузке
+        showNtePanel();
 
         setInterval(updateContent, 2000);
     }
