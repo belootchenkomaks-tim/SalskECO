@@ -1170,13 +1170,13 @@ Desc: ${desc || '—'}`;
         if (nteMode === 'onu') {
             var sn = onuFormState.sn ? onuFormState.sn.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
             idLine = 'SN: ' + (sn || '—');
-            rightLine = 'CDATA: ' + oltVal + '  VLAN: ' + vlanVal;
+            rightLine = 'CDATA: ' + oltVal + '  VLAN: ' + vlanVal + '  DESC: ' + descVal;
         } else {
             var mac = nteFormState.mac ? nteFormState.mac.replace(/[^0-9A-F]/g, '') : '';
             var macDisp = mac.length === 12 ? formatMAC(mac) : (mac || '—');
             idLine = 'MAC: ' + macDisp;
             var pLine = (savedStatus === 'not_connected' && nteFormState.profile) ? '  Profile: ' + nteFormState.profile : '';
-            rightLine = 'OLT: ' + oltVal + '  VLAN: ' + vlanVal + pLine;
+            rightLine = 'OLT: ' + oltVal + '  VLAN: ' + vlanVal + pLine + '  DESC: ' + descVal;
         }
 
         content.innerHTML = '' +
@@ -1211,8 +1211,8 @@ Desc: ${desc || '—'}`;
                     '</div>' +
                 '</div>' +
 
-                // Колонка 3: Данные
-                '<div style="display:flex;flex-direction:column;gap:2px;flex:2;justify-content:center;min-width:0;">' +
+                // Колонка 3: Данные (ограничена по ширине)
+                '<div style="display:flex;flex-direction:column;gap:2px;flex:1;max-width:280px;justify-content:center;min-width:0;">' +
                     '<div style="display:flex;align-items:center;gap:4px;">' +
                         '<span class="bc-l">DESC:</span>' +
                         '<span class="bc-v" style="flex:1;" title="' + descVal + '">' + descVal + '</span>' +
@@ -1228,7 +1228,7 @@ Desc: ${desc || '—'}`;
                 '</div>' +
 
                 // Колонка 4: Форма (MAC/SN + Profile)
-                '<div style="display:flex;flex-direction:column;gap:3px;flex:1.3;justify-content:center;min-width:0;">' +
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:1.5;justify-content:center;min-width:0;">' +
                     '<div id="bar-form-fields" style="display:flex;flex-direction:column;gap:3px;"></div>' +
                 '</div>' +
 
