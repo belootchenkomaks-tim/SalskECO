@@ -1166,17 +1166,14 @@ Desc: ${desc || '—'}`;
         var savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
 
         // Предпросмотр — левая часть (идентификатор)
-        var idLine = '', rightLine = '';
+        var idLine = '';
         if (nteMode === 'onu') {
             var sn = onuFormState.sn ? onuFormState.sn.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
             idLine = 'SN: ' + (sn || '—');
-            rightLine = 'CDATA: ' + oltVal + '  VLAN: ' + vlanVal + '  DESC: ' + descVal;
         } else {
             var mac = nteFormState.mac ? nteFormState.mac.replace(/[^0-9A-F]/g, '') : '';
             var macDisp = mac.length === 12 ? formatMAC(mac) : (mac || '—');
             idLine = 'MAC: ' + macDisp;
-            var pLine = (savedStatus === 'not_connected' && nteFormState.profile) ? '  Profile: ' + nteFormState.profile : '';
-            rightLine = 'OLT: ' + oltVal + '  VLAN: ' + vlanVal + pLine + '  DESC: ' + descVal;
         }
 
         content.innerHTML = '' +
@@ -1228,15 +1225,22 @@ Desc: ${desc || '—'}`;
                 '</div>' +
 
                 // Колонка 4: Форма (MAC/SN + Profile)
-                '<div style="display:flex;flex-direction:column;gap:3px;flex:1.5;justify-content:center;min-width:0;">' +
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:200px;justify-content:center;min-width:0;">' +
                     '<div id="bar-form-fields" style="display:flex;flex-direction:column;gap:3px;"></div>' +
                 '</div>' +
 
-                // Колонка 5: Предпросмотр (2 строки) + Копировать
-                '<div style="display:flex;flex-direction:column;gap:2px;flex:0 0 190px;justify-content:center;">' +
+                // Колонка 5: Предпросмотр — левая часть (MAC/SN, OLT, Profile)
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:150px;justify-content:center;">' +
                     '<div class="bc-pv">' + idLine + '</div>' +
-                    '<div class="bc-pv">' + rightLine + '</div>' +
-                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-end;margin-top:1px;">📋 Копировать</button>' +
+                    '<div class="bc-pv">' + (nteMode === 'onu' ? 'CDATA' : 'OLT') + ': ' + oltVal + '</div>' +
+                    (nteMode === 'nte' && savedStatus === 'not_connected' && nteFormState.profile ? '<div class="bc-pv">Profile: ' + nteFormState.profile + '</div>' : '') +
+                '</div>' +
+
+                // Колонка 6: Предпросмотр — правая часть (VLAN, DESC) + Копировать
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:160px;justify-content:center;">' +
+                    '<div class="bc-pv">VLAN: ' + vlanVal + '</div>' +
+                    '<div class="bc-pv" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">DESC: ' + descVal + '</div>' +
+                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-start;">📋 Копировать</button>' +
                 '</div>' +
 
             '</div>';
