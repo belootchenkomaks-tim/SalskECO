@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.7
+// @version      10.8
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -994,7 +994,7 @@ Desc: ${desc || '—'}`;
         fontLink.rel = 'stylesheet';
         document.head.appendChild(fontLink);
 
-        // ========== НИЖНЯЯ ПОЛОСА (72px, белый фон) ==========
+        // ========== НИЖНЯЯ ПОЛОСА (90px, белый фон) ==========
         container = document.createElement('div');
         container.id = 'timernet-container';
         container.style.cssText = `
@@ -1002,72 +1002,44 @@ Desc: ${desc || '—'}`;
             bottom: 0;
             left: 0;
             width: 100%;
-            height: 80px;
+            height: 90px;
             z-index: 999999;
             background: #ffffff;
             display: flex;
             flex-direction: row;
             align-items: center;
             padding: 4px 8px;
-            gap: 8px;
+            gap: 6px;
             box-shadow: 0 -2px 8px rgba(0,0,0,0.15);
             font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             box-sizing: border-box;
             border-top: 1px solid #e0e0e0;
         `;
 
-        // ========== ЛЕВАЯ КОЛОНКА: кнопки стопкой ==========
-        const leftCol = document.createElement('div');
-        leftCol.style.cssText = `
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex-shrink: 0;
-        `;
-
-        const rocketBtn = document.createElement('button');
-        rocketBtn.textContent = '🚀 Расш.';
-        rocketBtn.style.cssText = `
+        // ========== ФЛАЖОК 🚀 (как в старом скрипте) ==========
+        const rocketFlag = document.createElement('div');
+        rocketFlag.id = 'rocket-flag';
+        rocketFlag.textContent = '🚀';
+        rocketFlag.title = 'Запустить расширение';
+        rocketFlag.style.cssText = `
+            width: 36px;
+            height: 22px;
             background: linear-gradient(135deg, #9C27B0, #7B1FA2);
-            color: white;
-            border: none;
-            padding: 2px 12px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 600;
-            font-family: 'Orbitron', sans-serif;
+            border-radius: 8px 8px 0 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
             cursor: pointer;
-            letter-spacing: 0.3px;
-            transition: all 0.2s ease;
-            height: 24px;
-            white-space: nowrap;
+            flex-shrink: 0;
+            align-self: flex-end;
+            box-shadow: 0 -2px 6px rgba(156,39,176,0.3);
+            transition: height 0.2s ease;
+            user-select: none;
         `;
-        rocketBtn.onmouseover = () => { rocketBtn.style.background = 'linear-gradient(135deg, #7B1FA2, #6A1B9A)'; };
-        rocketBtn.onmouseout = () => { rocketBtn.style.background = 'linear-gradient(135deg, #9C27B0, #7B1FA2)'; };
-        rocketBtn.onclick = findAndLaunchExtension;
-
-        const nteBtn = document.createElement('button');
-        nteBtn.textContent = '⚙️ NTE';
-        nteBtn.style.cssText = `
-            background: linear-gradient(135deg, #FF9800, #F57C00);
-            color: white;
-            border: none;
-            padding: 2px 12px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: 600;
-            font-family: 'Orbitron', sans-serif;
-            cursor: pointer;
-            letter-spacing: 0.3px;
-            transition: all 0.2s ease;
-            height: 24px;
-            white-space: nowrap;
-        `;
-        nteBtn.onmouseover = () => { nteBtn.style.background = 'linear-gradient(135deg, #F57C00, #E65100)'; };
-        nteBtn.onmouseout = () => { nteBtn.style.background = 'linear-gradient(135deg, #FF9800, #F57C00)'; };
-
-        leftCol.appendChild(rocketBtn);
-        leftCol.appendChild(nteBtn);
+        rocketFlag.onmouseover = () => { rocketFlag.style.height = '32px'; rocketFlag.style.fontSize = '18px'; };
+        rocketFlag.onmouseout = () => { rocketFlag.style.height = '22px'; rocketFlag.style.fontSize = '14px'; };
+        rocketFlag.onclick = findAndLaunchExtension;
 
         // ========== ПРАВАЯ ЧАСТЬ: контент NTE/ONU ==========
         const rightArea = document.createElement('div');
@@ -1092,7 +1064,7 @@ Desc: ${desc || '—'}`;
 
         rightArea.appendChild(content);
 
-        container.appendChild(leftCol);
+        container.appendChild(rocketFlag);
         container.appendChild(rightArea);
         document.body.appendChild(container);
 
@@ -1165,82 +1137,57 @@ Desc: ${desc || '—'}`;
         var vlanVal = collectedData.vlan || '—';
         var savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
 
-        // Предпросмотр — левая часть (идентификатор)
-        var idLine = '';
-        if (nteMode === 'onu') {
-            var sn = onuFormState.sn ? onuFormState.sn.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
-            idLine = 'SN: ' + (sn || '—');
-        } else {
-            var mac = nteFormState.mac ? nteFormState.mac.replace(/[^0-9A-F]/g, '') : '';
-            var macDisp = mac.length === 12 ? formatMAC(mac) : (mac || '—');
-            idLine = 'MAC: ' + macDisp;
-        }
-
         content.innerHTML = '' +
             '<style>' +
-                '.bc-l { font-size:10px; color:#999; font-weight:600; font-family:Orbitron,sans-serif; letter-spacing:0.3px; }' +
-                '.bc-v { font-size:12px; font-family:SF Mono,monospace; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }' +
+                '.bc-l { font-size:11px; color:#999; font-weight:600; font-family:Orbitron,sans-serif; letter-spacing:0.3px; }' +
+                '.bc-v { font-size:13px; font-family:SF Mono,monospace; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }' +
                 '.bc-v.og { color:#4CAF50; } .bc-v.ob { color:#f44336; }' +
-                '.bc-ms { display:inline-flex; background:#e0e0e0; border-radius:5px; padding:2px; gap:0; }' +
-                '.bc-mb { padding:3px 12px; border:none; background:transparent; cursor:pointer; font-family:Orbitron,sans-serif; font-size:11px; font-weight:600; color:#666; border-radius:4px; }' +
+                '.bc-ms { display:inline-flex; flex-direction:column; background:#e0e0e0; border-radius:5px; padding:2px; gap:1px; }' +
+                '.bc-mb { padding:4px 14px; border:none; background:transparent; cursor:pointer; font-family:Orbitron,sans-serif; font-size:13px; font-weight:600; color:#666; border-radius:4px; }' +
                 '.bc-mb.act { background:white; color:#FF9800; box-shadow:0 1px 3px rgba(0,0,0,0.1); }' +
-                '.bc-rl { display:flex; align-items:center; gap:3px; cursor:pointer; font-size:11px; white-space:nowrap; color:#333; }' +
-                '.bc-f { padding:3px 6px; border:1px solid #ccc; border-radius:4px; font-size:11px; font-family:SF Mono,monospace; box-sizing:border-box; }' +
+                '.bc-rl { display:flex; align-items:center; gap:4px; cursor:pointer; font-size:13px; white-space:nowrap; color:#333; }' +
+                '.bc-f { padding:4px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px; font-family:SF Mono,monospace; box-sizing:border-box; }' +
                 '.bc-f:focus { outline:none; border-color:#FF9800; }' +
-                '.bc-sl { padding:3px 4px; border:1px solid #ccc; border-radius:4px; font-size:11px; background:white; }' +
-                '.bc-cp { background:linear-gradient(135deg,#FF9800,#F57C00); color:white; border:none; padding:4px 12px; border-radius:4px; font-size:10px; font-weight:600; cursor:pointer; font-family:Orbitron,sans-serif; white-space:nowrap; }' +
+                '.bc-sl { padding:4px 6px; border:1px solid #ccc; border-radius:4px; font-size:13px; background:white; }' +
+                '.bc-cp { background:linear-gradient(135deg,#FF9800,#F57C00); color:white; border:none; padding:5px 16px; border-radius:4px; font-size:12px; font-weight:600; cursor:pointer; font-family:Orbitron,sans-serif; white-space:nowrap; }' +
                 '.bc-cp:hover { background:linear-gradient(135deg,#F57C00,#E65100); }' +
-                '.bc-ph { font-size:10px; color:#FF9800; font-family:SF Mono,monospace; }' +
-                '.bc-pv { font-size:10px; font-family:SF Mono,monospace; color:#555; overflow:hidden; }' +
+                '.bc-ph { font-size:11px; color:#FF9800; font-family:SF Mono,monospace; }' +
             '</style>' +
 
-            '<div style="display:flex;height:100%;gap:6px;align-items:stretch;min-width:0;">' +
+            '<div style="display:flex;height:100%;gap:8px;align-items:stretch;min-width:0;">' +
 
-                // Колонка 2: Режим + Статус
-                '<div style="display:flex;flex-direction:column;gap:3px;flex:0 0 135px;justify-content:center;">' +
+                // Колонка 2: 2×2 сетка — NTE/ONU + статус
+                '<div style="display:flex;flex-direction:row;gap:6px;flex:0 0 170px;justify-content:center;align-items:center;">' +
                     '<div class="bc-ms">' +
                         '<button class="bc-mb ' + (nteMode === 'nte' ? 'act' : '') + '" id="mode-nte-btn">NTE</button>' +
                         '<button class="bc-mb ' + (nteMode === 'onu' ? 'act' : '') + '" id="mode-onu-btn">ONU</button>' +
                     '</div>' +
-                    '<div style="display:flex;flex-direction:column;gap:1px;">' +
+                    '<div style="display:flex;flex-direction:column;gap:2px;">' +
                         '<label class="bc-rl"><input type="radio" name="nte-status" value="not_connected" ' + (savedStatus === 'not_connected' ? 'checked' : '') + '> Не подключена</label>' +
                         '<label class="bc-rl"><input type="radio" name="nte-status" value="connected" ' + (savedStatus === 'connected' ? 'checked' : '') + '> Подключена</label>' +
                     '</div>' +
                 '</div>' +
 
-                // Колонка 3: Данные (ограничена по ширине)
-                '<div style="display:flex;flex-direction:column;gap:2px;flex:1;max-width:280px;justify-content:center;min-width:0;">' +
-                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                // Колонка 3: Данные (DESC, OLT, VLAN)
+                '<div style="display:flex;flex-direction:column;gap:2px;flex:1;max-width:300px;justify-content:center;min-width:0;">' +
+                    '<div style="display:flex;align-items:center;gap:6px;">' +
                         '<span class="bc-l">DESC:</span>' +
                         '<span class="bc-v" style="flex:1;" title="' + descVal + '">' + descVal + '</span>' +
                     '</div>' +
-                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                    '<div style="display:flex;align-items:center;gap:6px;">' +
                         '<span class="bc-l">' + (nteMode === 'onu' ? 'CDATA' : 'OLT') + ':</span>' +
                         '<span class="bc-v ' + (oltVal !== '❌' ? 'og' : 'ob') + '">' + oltVal + '</span>' +
                     '</div>' +
-                    '<div style="display:flex;align-items:center;gap:4px;">' +
+                    '<div style="display:flex;align-items:center;gap:6px;">' +
                         '<span class="bc-l">VLAN:</span>' +
                         '<span class="bc-v ' + (vlanVal !== '—' ? 'og' : 'ob') + '">' + vlanVal + '</span>' +
                     '</div>' +
                 '</div>' +
 
-                // Колонка 4: Форма (MAC/SN + Profile)
-                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:200px;justify-content:center;min-width:0;">' +
+                // Колонка 4: Форма (MAC/SN + Profile) + Кнопка
+                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:260px;justify-content:center;min-width:0;">' +
                     '<div id="bar-form-fields" style="display:flex;flex-direction:column;gap:3px;"></div>' +
-                '</div>' +
-
-                // Колонка 5: Предпросмотр — левая часть (MAC/SN, OLT, Profile)
-                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:150px;justify-content:center;">' +
-                    '<div class="bc-pv">' + idLine + '</div>' +
-                    '<div class="bc-pv">' + (nteMode === 'onu' ? 'CDATA' : 'OLT') + ': ' + oltVal + '</div>' +
-                    (nteMode === 'nte' && savedStatus === 'not_connected' && nteFormState.profile ? '<div class="bc-pv">Profile: ' + nteFormState.profile + '</div>' : '') +
-                '</div>' +
-
-                // Колонка 6: Предпросмотр — правая часть (VLAN, DESC) + Копировать
-                '<div style="display:flex;flex-direction:column;gap:3px;flex:1;max-width:160px;justify-content:center;">' +
-                    '<div class="bc-pv">VLAN: ' + vlanVal + '</div>' +
-                    '<div class="bc-pv" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">DESC: ' + descVal + '</div>' +
-                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-start;">📋 Копировать</button>' +
+                    '<button class="bc-cp" id="nte-copy-config" style="align-self:flex-start;margin-top:2px;">📋 Копировать</button>' +
                 '</div>' +
 
             '</div>';
@@ -1259,31 +1206,31 @@ Desc: ${desc || '—'}`;
                 formFields.innerHTML = '' +
                     '<div style="display:flex;align-items:center;gap:4px;">' +
                         '<span class="bc-l" style="flex-shrink:0;">SN:</span>' +
-                        '<input type="text" id="onu-sn-input" class="bc-f" placeholder="HWTCAF6DEECC" maxlength="12" value="' + onuFormState.sn + '" style="width:140px;">' +
+                        '<input type="text" id="onu-sn-input" class="bc-f" placeholder="HWTCAF6DEECC" maxlength="12" value="' + onuFormState.sn + '" style="width:160px;">' +
                     '</div>' +
                     '<span id="onu-sn-preview" class="bc-ph"></span>';
             } else {
-                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;">✅ Настроится автоматически</span>';
+                formFields.innerHTML = '<span style="font-size:13px;color:#1976D2;">✅ Настроится автоматически</span>';
             }
         } else {
             if (selectedStatus === 'not_connected') {
                 formFields.innerHTML = '' +
                     '<div style="display:flex;align-items:center;gap:4px;">' +
                         '<span class="bc-l" style="flex-shrink:0;">MAC:</span>' +
-                        '<input type="text" id="nte-mac-input" class="bc-f" placeholder="02005E09DCF8" maxlength="17" value="' + nteFormState.mac + '" style="width:160px;">' +
+                        '<input type="text" id="nte-mac-input" class="bc-f" placeholder="02005E09DCF8" maxlength="17" value="' + nteFormState.mac + '" style="width:190px;">' +
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:4px;">' +
                         '<span class="bc-l" style="flex-shrink:0;">Profile:</span>' +
-                        '<select id="nte-profile-select" class="bc-sl" style="width:160px;">' +
+                        '<select id="nte-profile-select" class="bc-sl" style="width:190px;">' +
                             NTE_PROFILES.map(function(p) { return '<option value="' + p + '" ' + (nteFormState.profile === p ? 'selected' : '') + '>' + p + '</option>'; }).join('') +
                         '</select>' +
                     '</div>' +
                     '<div style="display:flex;gap:6px;">' +
                         '<span id="nte-mac-preview" class="bc-ph"></span>' +
-                        '<span id="nte-profile-hint" style="font-size:10px;color:#999;"></span>' +
+                        '<span id="nte-profile-hint" style="font-size:11px;color:#999;"></span>' +
                     '</div>';
             } else {
-                formFields.innerHTML = '<span style="font-size:11px;color:#1976D2;">✅ Настроится автоматически</span>';
+                formFields.innerHTML = '<span style="font-size:13px;color:#1976D2;">✅ Настроится автоматически</span>';
             }
         }
 
