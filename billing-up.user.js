@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.19
+// @version      10.20
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1058,7 +1058,6 @@ Desc: ${desc || '—'}`;
             flex-direction: column;
             gap: 4px;
             min-width: 0;
-            overflow: hidden;
         `;
 
         content = document.createElement('div');
@@ -1124,11 +1123,12 @@ Desc: ${desc || '—'}`;
         handle.style.cssText = `
             position: fixed;
             bottom: 80px;
-            right: 24px;
-            width: 32px;
-            height: 8px;
-            background: rgba(0,0,0,0.12);
-            border-radius: 4px;
+            right: 20px;
+            width: 44px;
+            height: 12px;
+            background: rgba(0,0,0,0.1);
+            border: 1px solid rgba(0,0,0,0.15);
+            border-radius: 6px;
             cursor: ns-resize;
             z-index: 1000001;
             user-select: none;
@@ -1167,7 +1167,7 @@ Desc: ${desc || '—'}`;
             barScale = scale;
             var h = Math.round(80 * scale);
             container.style.height = h + 'px';
-            container.style.fontSize = (scale * 100) + '%';
+            content.style.zoom = scale;
             rocketFlag.style.bottom = h + 'px';
             handle.style.bottom = h + 'px';
         }
