@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.17
+// @version      10.18
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -749,21 +749,14 @@ Desc: ${desc || '—'}`;
         let isInputFocused = false;
         let isSNFocused = false;
 
-        // ===== Mode switch (с анимацией) =====
+        // ===== Mode switch (плавное переключение) =====
         function switchMode(newMode) {
             if (nteMode === newMode) return;
-            content.style.transition = 'opacity 0.15s ease';
-            content.style.opacity = '0';
-            setTimeout(function() {
-                if (newMode === 'nte') nteMode = 'nte';
-                else nteMode = 'onu';
-                if (newMode === 'nte') saveNTEFormState();
-                else saveONUFormState();
-                renderBarContent();
-                content.style.transition = 'opacity 0.15s ease';
-                content.style.opacity = '1';
-                setTimeout(function() { content.style.transition = ''; }, 150);
-            }, 150);
+            nteMode = newMode;
+            if (newMode === 'nte') saveNTEFormState();
+            else saveONUFormState();
+            renderBarContent();
+            setupBarInputHandlers();
         }
         document.getElementById('mode-nte-btn')?.addEventListener('click', function() { switchMode('nte'); });
         document.getElementById('mode-onu-btn')?.addEventListener('click', function() { switchMode('onu'); });
@@ -1179,7 +1172,7 @@ Desc: ${desc || '—'}`;
                 '.bc-v { font-size:13px; font-family:SF Mono,monospace; color:#333; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }' +
                 '.bc-v.og { color:#4CAF50; } .bc-v.ob { color:#f44336; }' +
                 '.bc-ms { display:inline-flex; flex-direction:column; background:#e0e0e0; border-radius:5px; padding:2px; gap:1px; }' +
-                '.bc-mb { padding:4px 14px; border:none; background:transparent; cursor:pointer; font-family:Orbitron,sans-serif; font-size:13px; font-weight:600; color:#666; border-radius:4px; }' +
+                '.bc-mb { padding:4px 14px; border:none; background:transparent; cursor:pointer; font-family:Orbitron,sans-serif; font-size:13px; font-weight:600; color:#666; border-radius:4px; transition:all 0.15s ease; }' +
                 '.bc-mb.act { background:#4CAF50; color:white; box-shadow:0 1px 3px rgba(0,0,0,0.1); }' +
                 '.bc-rl { display:flex; align-items:center; gap:4px; cursor:pointer; font-size:13px; white-space:nowrap; color:#333; }' +
                 '.bc-f { padding:4px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px; font-family:SF Mono,monospace; box-sizing:border-box; }' +
@@ -1228,7 +1221,7 @@ Desc: ${desc || '—'}`;
                 '</div>' +
 
                 // Колонка 5: Предпросмотр
-                '<div style="display:flex;flex-direction:column;gap:1px;flex:0 0 150px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:2px 5px;">' +
+                '<div style="display:flex;flex-direction:column;gap:1px;flex:0 0 150px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:2px 5px;margin-left:20px;">' +
                     previewLines +
                 '</div>' +
 
