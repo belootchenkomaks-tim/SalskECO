@@ -1114,7 +1114,7 @@ Desc: ${desc || '—'}`;
         // ========== ДЕРЖАТЕЛЬ (изменение размера) ==========
         var barScale = 1.0;
         var minScale = 0.1;
-        var maxScale = 3.0;
+        var maxScale = 1.5;
         var defaultScale = 1.0;
 
         var handle = document.createElement('div');
