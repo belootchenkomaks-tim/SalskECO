@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.18
+// @version      10.19
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1112,7 +1112,69 @@ Desc: ${desc || '—'}`;
 
         initData();
 
-        // Рендерим NTE контент в правую часть
+        // ========== ДЕРЖАТЕЛЬ (изменение размера) ==========
+        var barScale = 1.0;
+        var minScale = 0.1;
+        var maxScale = 3.0;
+        var defaultScale = 1.0;
+
+        var handle = document.createElement('div');
+        handle.id = 'bar-resize-handle';
+        handle.title = 'Потяните для масштаба. Двойной клик — сброс.';
+        handle.style.cssText = `
+            position: fixed;
+            bottom: 80px;
+            right: 24px;
+            width: 32px;
+            height: 8px;
+            background: rgba(0,0,0,0.12);
+            border-radius: 4px;
+            cursor: ns-resize;
+            z-index: 1000001;
+            user-select: none;
+            transition: background 0.2s;
+        `;
+        handle.onmouseover = function() { handle.style.background = 'rgba(0,0,0,0.3)'; };
+        handle.onmouseout = function() { handle.style.background = 'rgba(0,0,0,0.12)'; };
+
+        var isDragging = false, dragStartY, dragStartScale;
+
+        handle.onmousedown = function(e) {
+            e.preventDefault();
+            isDragging = true;
+            dragStartY = e.clientY;
+            dragStartScale = barScale;
+            document.body.style.cursor = 'ns-resize';
+        };
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            var deltaY = dragStartY - e.clientY;
+            var newScale = dragStartScale + deltaY * 0.012;
+            newScale = Math.max(minScale, Math.min(maxScale, newScale));
+            applyBarScale(newScale);
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!isDragging) return;
+            isDragging = false;
+            document.body.style.cursor = '';
+        });
+
+        handle.ondblclick = function() { applyBarScale(defaultScale); };
+
+        function applyBarScale(scale) {
+            barScale = scale;
+            var h = Math.round(80 * scale);
+            container.style.height = h + 'px';
+            container.style.fontSize = (scale * 100) + '%';
+            rocketFlag.style.bottom = h + 'px';
+            handle.style.bottom = h + 'px';
+        }
+
+        document.body.appendChild(handle);
+
+        // ========== РЕНДЕРИНГ ==========
         currentView = 'nte-wizard';
         renderBarContent();
         setupBarInputHandlers();
