@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.15
+// @version      10.17
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -749,23 +749,24 @@ Desc: ${desc || '—'}`;
         let isInputFocused = false;
         let isSNFocused = false;
 
-        // ===== Mode switch =====
-        document.getElementById('mode-nte-btn')?.addEventListener('click', function() {
-            if (nteMode !== 'nte') {
-                nteMode = 'nte';
-                saveNTEFormState();
+        // ===== Mode switch (с анимацией) =====
+        function switchMode(newMode) {
+            if (nteMode === newMode) return;
+            content.style.transition = 'opacity 0.15s ease';
+            content.style.opacity = '0';
+            setTimeout(function() {
+                if (newMode === 'nte') nteMode = 'nte';
+                else nteMode = 'onu';
+                if (newMode === 'nte') saveNTEFormState();
+                else saveONUFormState();
                 renderBarContent();
-                setupBarInputHandlers();
-            }
-        });
-        document.getElementById('mode-onu-btn')?.addEventListener('click', function() {
-            if (nteMode !== 'onu') {
-                nteMode = 'onu';
-                saveONUFormState();
-                renderBarContent();
-                setupBarInputHandlers();
-            }
-        });
+                content.style.transition = 'opacity 0.15s ease';
+                content.style.opacity = '1';
+                setTimeout(function() { content.style.transition = ''; }, 150);
+            }, 150);
+        }
+        document.getElementById('mode-nte-btn')?.addEventListener('click', function() { switchMode('nte'); });
+        document.getElementById('mode-onu-btn')?.addEventListener('click', function() { switchMode('onu'); });
 
         // ===== Status radio =====
         document.querySelectorAll('input[name="nte-status"]').forEach(radio => {
@@ -1256,32 +1257,32 @@ Desc: ${desc || '—'}`;
             if (selectedStatus === 'not_connected') {
                 formFields.innerHTML = '' +
                     '<div style="display:flex;align-items:center;gap:4px;">' +
-                        '<span class="bc-l" style="flex-shrink:0;">SN:</span>' +
+                        '<span class="bc-l" style="flex-shrink:0;width:55px;">SN:</span>' +
                         '<input type="text" id="onu-sn-input" class="bc-f" placeholder="HWTCAF6DEECC" maxlength="12" value="' + onuFormState.sn + '" style="width:160px;">' +
                     '</div>' +
-                    '<span id="onu-sn-preview" class="bc-ph"></span>';
+                    '<span id="onu-sn-preview" class="bc-ph" style="margin-left:55px;"></span>';
             } else {
-                formFields.innerHTML = '<span style="font-size:13px;color:#1976D2;">✅ Настроится автоматически</span>';
+                formFields.innerHTML = '<span style="font-size:13px;color:#1976D2;margin-left:55px;">✅ Настроится автоматически</span>';
             }
         } else {
             if (selectedStatus === 'not_connected') {
                 formFields.innerHTML = '' +
                     '<div style="display:flex;align-items:center;gap:4px;">' +
-                        '<span class="bc-l" style="flex-shrink:0;">MAC:</span>' +
+                        '<span class="bc-l" style="flex-shrink:0;width:55px;">MAC:</span>' +
                         '<input type="text" id="nte-mac-input" class="bc-f" placeholder="02005E09DCF8" maxlength="17" value="' + nteFormState.mac + '" style="width:190px;">' +
                     '</div>' +
                     '<div style="display:flex;align-items:center;gap:4px;">' +
-                        '<span class="bc-l" style="flex-shrink:0;">Profile:</span>' +
+                        '<span class="bc-l" style="flex-shrink:0;width:55px;">Profile:</span>' +
                         '<select id="nte-profile-select" class="bc-sl" style="width:190px;">' +
                             NTE_PROFILES.map(function(p) { return '<option value="' + p + '" ' + (nteFormState.profile === p ? 'selected' : '') + '>' + p + '</option>'; }).join('') +
                         '</select>' +
                     '</div>' +
-                    '<div style="display:flex;gap:6px;">' +
+                    '<div style="display:flex;gap:6px;margin-left:55px;">' +
                         '<span id="nte-mac-preview" class="bc-ph"></span>' +
                         '<span id="nte-profile-hint" style="font-size:11px;color:#999;"></span>' +
                     '</div>';
             } else {
-                formFields.innerHTML = '<span style="font-size:13px;color:#1976D2;">✅ Настроится автоматически</span>';
+                formFields.innerHTML = '<span style="font-size:13px;color:#1976D2;margin-left:55px;">✅ Настроится автоматически</span>';
             }
         }
 
