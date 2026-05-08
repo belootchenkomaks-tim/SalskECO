@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.20
+// @version      10.22
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -1111,31 +1111,39 @@ Desc: ${desc || '—'}`;
 
         initData();
 
-        // ========== ДЕРЖАТЕЛЬ (изменение размера) ==========
+        // ========== ДЕРЖАТЕЛЬ (вертикальный, внутри строки) ==========
         var barScale = 1.0;
-        var minScale = 0.1;
+        var minScale = 0.05;
         var maxScale = 1.5;
         var defaultScale = 1.0;
 
         var handle = document.createElement('div');
         handle.id = 'bar-resize-handle';
-        handle.title = 'Потяните для масштаба. Двойной клик — сброс.';
+        handle.title = 'Потяните: вверх↑ 150%, вниз↓ свернуть. Двойной клик — сброс.';
         handle.style.cssText = `
-            position: fixed;
-            bottom: 80px;
-            right: 20px;
-            width: 44px;
-            height: 12px;
-            background: rgba(0,0,0,0.1);
-            border: 1px solid rgba(0,0,0,0.15);
-            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            width: 14px;
+            height: 100%;
             cursor: ns-resize;
-            z-index: 1000001;
+            flex-shrink: 0;
             user-select: none;
+            background: transparent;
+            border-left: 1px solid #e0e0e0;
             transition: background 0.2s;
         `;
-        handle.onmouseover = function() { handle.style.background = 'rgba(0,0,0,0.3)'; };
-        handle.onmouseout = function() { handle.style.background = 'rgba(0,0,0,0.12)'; };
+        handle.onmouseover = function() { handle.style.background = '#f5f5f5'; };
+        handle.onmouseout = function() { handle.style.background = 'transparent'; };
+
+        // 3 засечки
+        for (var i = 0; i < 3; i++) {
+            var tick = document.createElement('div');
+            tick.style.cssText = 'width:8px;height:1px;background:#bbb;border-radius:1px;';
+            handle.appendChild(tick);
+        }
 
         var isDragging = false, dragStartY, dragStartScale;
 
@@ -1150,7 +1158,7 @@ Desc: ${desc || '—'}`;
         document.addEventListener('mousemove', function(e) {
             if (!isDragging) return;
             var deltaY = dragStartY - e.clientY;
-            var newScale = dragStartScale + deltaY * 0.012;
+            var newScale = dragStartScale + deltaY * 0.008;
             newScale = Math.max(minScale, Math.min(maxScale, newScale));
             applyBarScale(newScale);
         });
@@ -1166,13 +1174,13 @@ Desc: ${desc || '—'}`;
         function applyBarScale(scale) {
             barScale = scale;
             var h = Math.round(80 * scale);
-            container.style.height = h + 'px';
+            container.style.height = (h < 20 ? 20 : h) + 'px';
             content.style.zoom = scale;
-            rocketFlag.style.bottom = h + 'px';
-            handle.style.bottom = h + 'px';
+            rocketFlag.style.bottom = (h < 20 ? 20 : h) + 'px';
         }
 
-        document.body.appendChild(handle);
+        // Добавляем handle в контейнер после rightArea
+        container.appendChild(handle);
 
         // ========== РЕНДЕРИНГ ==========
         currentView = 'nte-wizard';
