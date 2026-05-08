@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BILLING UP NTE
 // @namespace    http://tampermonkey.net/
-// @version      10.22
+// @version      10.23
 // @description  Панель настройки NTE/ONU для billing.timernet.ru
 // @author       BelootchenkoMX
 // @match        https://billing.timernet.ru/*
@@ -777,6 +777,7 @@ Desc: ${desc || '—'}`;
         document.getElementById('nte-profile-select')?.addEventListener('change', function() {
             nteFormState.profile = this.value;
             nteFormState.profileAutoDetected = false;
+            updateBarPreview();
         });
 
         // ===== Copy button =====
@@ -810,7 +811,6 @@ Desc: ${desc || '—'}`;
                 if (mac !== macInput.value) { macInput.value = mac; }
                 var rawMac = mac.replace(/[^0-9A-F]/g, '');
                 var macPreview = document.getElementById('nte-mac-preview');
-                var profileHint = document.getElementById('nte-profile-hint');
                 var profileSelect = document.getElementById('nte-profile-select');
 
                 if (rawMac.length >= 2) {
@@ -827,17 +827,14 @@ Desc: ${desc || '—'}`;
                             profileSelect.value = detected;
                             nteFormState.profile = detected;
                             nteFormState.profileAutoDetected = true;
-                            if (profileHint) profileHint.textContent = '🔍 Авто: ' + (detected === 'NTE-2-VPU' ? 'NTE-2 (ICT)' : 'NTE-RG (ZTE)');
-                        } else {
-                            if (profileHint) profileHint.textContent = '⚠️ Выберите профиль';
                         }
                     }
                 } else if (rawMac.length > 0) {
                     if (macPreview) macPreview.style.color = '#FF9800';
-                    if (profileHint) profileHint.textContent = '';
                     nteFormState.profileAutoDetected = false;
                 }
                 nteFormState.mac = macInput.value;
+                updateBarPreview();
             }
 
             macInput.addEventListener('input', updateMacPreview);
@@ -849,6 +846,7 @@ Desc: ${desc || '—'}`;
                 profileSelect.addEventListener('change', function() {
                     nteFormState.profile = this.value;
                     nteFormState.profileAutoDetected = false;
+                    updateBarPreview();
                 });
             }
         }
@@ -878,7 +876,8 @@ Desc: ${desc || '—'}`;
                         snPreview.textContent = '✅ SN: ' + cleanSN;
                     } else { snPreview.style.color = '#FF9800'; }
                 } else { snPreview.textContent = ''; }
-                onuFormState.sn = snInput.value;
+                    onuFormState.sn = snInput.value;
+                updateBarPreview();
             }
 
             snInput.addEventListener('input', updateSNPreview);
@@ -1291,7 +1290,7 @@ Desc: ${desc || '—'}`;
                 '</div>' +
 
                 // Колонка 5: Предпросмотр
-                '<div style="display:flex;flex-direction:column;gap:1px;flex:0 0 150px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:2px 5px;margin-left:20px;">' +
+                '<div id="nte-preview-col" style="display:flex;flex-direction:column;gap:1px;flex:0 0 150px;justify-content:center;background:#f9f9f9;border-radius:4px;padding:2px 5px;margin-left:20px;">' +
                     previewLines +
                 '</div>' +
 
@@ -1342,7 +1341,6 @@ Desc: ${desc || '—'}`;
                     '</div>' +
                     '<div style="display:flex;gap:6px;margin-left:55px;">' +
                         '<span id="nte-mac-preview" class="bc-ph"></span>' +
-                        '<span id="nte-profile-hint" style="font-size:11px;color:#999;"></span>' +
                     '</div>';
             } else {
                 formFields.innerHTML = '<span style="font-size:13px;color:#1976D2;margin-left:55px;">✅ Настроится автоматически</span>';
@@ -1350,6 +1348,33 @@ Desc: ${desc || '—'}`;
         }
 
         setupBarInputHandlers();
+    }
+
+    // Обновляет предпросмотр в реальном времени
+    function updateBarPreview() {
+        var col = document.getElementById('nte-preview-col');
+        if (!col) return;
+        var savedStatus = nteMode === 'nte' ? nteFormState.status : onuFormState.status;
+        var oltV = collectedData.olt || '❌';
+        var vlanV = collectedData.vlan || '—';
+        var descV = getDescWithoutContract() || '—';
+        if (nteMode === 'onu') {
+            var cdataIp = getCdataIp();
+            oltV = cdataIp || '❌';
+            descV = collectedData.combined || '—';
+        }
+        var html = '';
+        function a(l, v) { html += '<div class="bc-pr">' + l + ': <span class="bc-prv">' + v + '</span></div>'; }
+        if (nteMode === 'onu') {
+            var snV = onuFormState.sn ? onuFormState.sn.toUpperCase().replace(/[^0-9A-Z]/g, '') : '';
+            a('CDATA', oltV); a('SN', snV || '—'); a('VLAN', vlanV); a('DESC', descV);
+        } else {
+            var macV = nteFormState.mac ? nteFormState.mac.replace(/[^0-9A-F]/g, '') : '';
+            var macD = macV.length === 12 ? formatMAC(macV) : (macV || '—');
+            a('OLT', oltV); a('MAC', macD); a('VLAN', vlanV); a('DESC', descV);
+            if (savedStatus === 'not_connected' && nteFormState.profile) a('Profile', nteFormState.profile);
+        }
+        col.innerHTML = html;
     }
 
     function init() {
